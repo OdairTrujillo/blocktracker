@@ -1,0 +1,32 @@
+{
+  "root": true,
+  "parser": "@typescript-eslint/parser",
+  "plugins": [
+    "@typescript-eslint",
+    "prettier"
+  ],
+  "extends": [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/eslint-recommended",
+    "plugin:@typescript-eslint/recommended",
+    "prettier"
+  ],
+  "rules": {
+    "@typescript-eslint/no-array-constructor": "off", // literal notation [] types problems
+    "@typescript-eslint/no-unused-vars": off,
+    "@typescript-eslint/typedef": [
+      "error",
+      {
+        "variableDeclaration": true
+      }
+    ],
+    "no-unused-vars": [
+       "warn",
+       {
+          "argsIgnorePattern": "next"
+       }
+    ],
+    "no-console": "warn", // Warn if you use console.log() method.
+    "prettier/prettier": "error" // Enforces prettier rules, see .pretierrc file.
+  }
+}

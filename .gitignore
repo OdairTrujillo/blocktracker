@@ -1,0 +1,13 @@
+dist/
+node_modules/
+packages/
+types/
+public_html/charting_library/
+logs/
+package-lock.json
+.env
+tsconfig.tsbuildinfo
+*~
+\#*#
+.#*
+'#*
