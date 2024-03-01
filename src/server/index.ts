@@ -4,11 +4,9 @@ import cors from 'cors';
 import morgan from 'morgan';
 import { logger, ApiError } from 'libchainstream';
 
-import { api } from './api/v1/index';
+import { api } from './api/v1/index.js';
 import { config } from '../config.js';
 
-// Init express app
-export const app: Express = express();
 // Setup morgan middleware
 const requestFormat: string = ':remote-addr [:date[iso]] ":method :url" :status.';
 const morganStream: RequestHandler = morgan(requestFormat, {
@@ -19,6 +17,9 @@ const morganStream: RequestHandler = morgan(requestFormat, {
     }
   }
 });
+
+// Init express app
+export const app: Express = express();
 
 // Setup CORS
 app.use(
@@ -70,4 +71,3 @@ app.use((err: ApiError, req: Request, res: Response, next: NextFunction) => {
     message
   });
 });
-

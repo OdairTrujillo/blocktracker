@@ -1,50 +1,73 @@
 import { Blockchain, CustomRpcProvider, BackendSelector } from 'libchainstream';
 import { ProtocolCode, AddrsByProtocol, UniqueAddrsByProtocol } from 'libchainstream';
-import { AddrsByBlockchain, UniqueAddrsByBlockchain} from 'libchainstream';
+import { AddrsByChain, UniqueAddrsByChain, PROTOCOLS } from 'libchainstream';
+import { Config } from 'libchainstream';
 
-import { getTradedPairs } from './transactions';
+import { getTradedPairs } from './transactions.js';
 
-export const pairsPool: AddrsByProtocol = {} as AddrsByProtocol;
-export const uniquePairsPool: UniqueAddrsByProtocol = {} as UniqueAddrsByProtocol;
-export const pairsPoolByChain: AddrsByBlockchain = {} as AddrsByBlockchain;
-export const uniquePairsPoolBychain: UniqueAddrsByBlockchain = {} as UniqueAddrsByBlockchain;
+// Objects tu be used with the API controllers
+export const pairsPool: AddrsByChain = {} as AddrsByChain;
+export const uniquePairsPool: UniqueAddrsByChain = {} as UniqueAddrsByChain;
+// This array will store 24 hours of traded pairs.
+export const historyPool: Array<AddrsByChain> = [];
 
-// As one blockchain has several protocols, use a Set to store unique blockchains.
+// Init objects
+const initPairAddrs: AddrsByProtocol = {} as AddrsByProtocol;
+const initUniquePairAddr: UniqueAddrsByProtocol = {} as UniqueAddrsByProtocol;
+
 export function newBlock() {
-  const blockchains: Set<Blockchain> = new Set();
   // Register event for new blocks for each unique blockchain provider
-  blockchains.forEach((blockchain: Blockchain) => {
-    const backendSelector: Generator<number> = BackendSelector('fullNode', blockchain);
+  Config.blockchains.forEach((blockchain: Blockchain) => {
+    // Creating properties with blockchain as key with empty arrays and sets.
+    PROTOCOLS[blockchain.name].forEach((protocolCode: ProtocolCode) => {
+      initPairAddrs[protocolCode] = [];
+      initUniquePairAddr[protocolCode] = new Set();
+      pairsPool[blockchain.name] = initPairAddrs;
+      uniquePairsPool[blockchain.name] = initUniquePairAddr;
+    });
+
+    const backendSelector: Generator<number> = BackendSelector(
+      'fullNode',
+      blockchain.name
+    );
     const provider: CustomRpcProvider = new CustomRpcProvider(
       'fullNode',
-      blockchain
+      blockchain.name
     );
-    
+
     provider.on('block', async (blockNumber: number) => {
       if (blockNumber % 3 === 0) {
-	const pairAddrsByProtocol: AddrsByProtocol =
-	  await getTradedPairs(
-	    blockchain,
-	    blockNumber,
-	    { backendSelector: backendSelector }
-	  );
-	console.log('Pairs traded:\n', pairAddrsByProtocol);
-	const protocolCodes: Array<ProtocolCode> =
-	  Object.keys(pairAddrsByProtocol) as Array<ProtocolCode>;
-	protocolCodes.forEach((protocolCode: ProtocolCode) => {
-	  // Adding pair addresses traded in block by protocol
-          pairsPool[protocolCode] = pairAddrsByProtocol[protocolCode];
-	  // Adding pair addresses traded in block by protocol (unique)
-	  for (const pairAddress of pairAddrsByProtocol[protocolCode]) {
-	    uniquePairsPool[protocolCode].add(pairAddress);
-	  }
-	});
-	console.log('Pool traded pairs:\n', pairsPool);
-	console.log('Pool unique traded pairs:\n', uniquePairsPool);
+        const tradedPairAddrs: AddrsByProtocol = await getTradedPairs(
+          blockchain,
+          blockNumber,
+          { backendSelector: backendSelector }
+        );
+        // Process it if there were protocols traded
+        if (Object.keys(tradedPairAddrs).length > 0) {
+          PROTOCOLS[blockchain.name].forEach((protocolCode: ProtocolCode) => {
+            // Ading protocol pairs addresses by blockchain.
+            pairsPool[blockchain.name][protocolCode].push(
+              ...tradedPairAddrs[protocolCode]
+            );
+            // Adding protocol unique pairs addresses by blockchain.
+            for (const pairAddress of tradedPairAddrs[protocolCode]) {
+              uniquePairsPool[blockchain.name][protocolCode].add(pairAddress);
+            }
+          });
+          console.log('Pool traded pairs:\n', pairsPool);
+          //console.log('Pool unique traded pairs:\n', uniquePairsPool);
+        }
       }
     });
-    
-    pairsPoolByChain[blockchain].push(pairsPool);
-    uniquePairsPoolBychain[blockchain].push(uniquePairsPool);
+
+    setInterval(async () => {
+      // Adding one cacheinterval of data
+      historyPool.push(structuredClone(pairsPool));
+      // Flush recent stored pairs.
+      PROTOCOLS[blockchain.name].forEach((protocolCode: ProtocolCode) => {
+        pairsPool[blockchain.name][protocolCode] = [];
+      });
+      console.log('History pool:\n', historyPool);
+    }, blockchain.cacheinterval);
   });
 }

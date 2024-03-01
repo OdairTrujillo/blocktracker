@@ -1,10 +1,10 @@
-import { Block, Interface, TransactionResponse, EthersError } from 'ethers';
+import { Block, TransactionResponse, EthersError } from 'ethers';
 import { TransactionDescription, dataSlice, getAddress, dataLength } from 'ethers';
 import { CustomRpcProvider, BackendSelector, PairAB } from 'libchainstream';
 import { Blockchain, ProtocolCode } from 'libchainstream';
 import { logger, fromPairsAB, sleep, OracleError } from 'libchainstream';
 import { TxsByProtocol, AddrsByProtocol } from 'libchainstream';
-import { ROUTER_ADDRESS, ROUTER_ABI } from 'libchainstream';
+import { PROTOCOLS, ROUTER_ADDRESS, UNIVERSAL_ROUTER } from 'libchainstream';
 
 // Get the traded pairs whithin a block by protocol
 export async function getTradedPairs(
@@ -16,13 +16,11 @@ export async function getTradedPairs(
   } = {}
 ): Promise<AddrsByProtocol> {
   // Store traded pair addresses by protocol with repetitions.
-  const tradedPairAddresses: AddrsByProtocol = {} as AddrsByProtocol;
-  // TODO: make an universal AbiInterface
-  const routerInterface: Interface = new Interface(ROUTER_ABI['PCAKESWAP_V3']); // Router V3
+  const tradedPairAddrs: AddrsByProtocol = {} as AddrsByProtocol;
   // TODO: read attempts from config file.
   const attempts: number = options.attempts ?? 3;
   const backendSelector: Generator<number> =
-    options.backendSelector ?? BackendSelector('fullNode', blockchain);
+    options.backendSelector ?? BackendSelector('fullNode', blockchain.name);
 
   async function parseWithAttempts(
     attempts: number,
@@ -31,7 +29,7 @@ export async function getTradedPairs(
     try {
       const provider: CustomRpcProvider = new CustomRpcProvider(
         'fullNode',
-        blockchain,
+        blockchain.name,
         {
           backendPosition: backendPosition
         }
@@ -56,48 +54,50 @@ export async function getTradedPairs(
 
       // Arranging transactions for each protocol
       const routersTransactions: TxsByProtocol = {} as TxsByProtocol;
-      const protocolCodes: Array<ProtocolCode> =
-	Object.keys(ROUTER_ADDRESS) as Array<ProtocolCode>;
 
-      protocolCodes.forEach((key: ProtocolCode) => {
-	const pairsAB: Array<PairAB> = [];
-	// Adding each protocol transactions
-	routersTransactions[key] = txs.filter((tx: TransactionResponse) => {
-          return ROUTER_ADDRESS[key] === tx.to ?? '';
+      PROTOCOLS[blockchain.name].forEach((protocolCode: ProtocolCode) => {
+        const pairsAB: Array<PairAB> = [];
+        // Adding each protocol transactions
+        routersTransactions[protocolCode] = txs.filter((tx: TransactionResponse) => {
+          return ROUTER_ADDRESS[protocolCode] === tx.to ?? '';
         });
-	// Parsing each transaction for each protocol
-	routersTransactions[key].forEach((tx: TransactionResponse) => {
-        const parsedTx: TransactionDescription | null = routerInterface.parseTransaction({
-          data: tx.data
-        });
-        // Multicalls
-        if (parsedTx && parsedTx.name === 'multicall') {
-          if (parsedTx.args.length > 1) {
-            // Position 1 is the multicall encoded data
-            parsedTx.args[1].forEach((txData: string) => {
-              const parsedSingleTx: TransactionDescription | null =
-                routerInterface.parseTransaction({ data: txData });
-              if (parsedSingleTx) {
-                const pairAB: PairAB | null = pairABfromSingleCall(parsedSingleTx);
-                if (pairAB) {
-                  pairsAB.push(pairAB);
+        // Parsing each transaction for each protocol
+        routersTransactions[protocolCode].forEach((tx: TransactionResponse) => {
+          const parsedTx: TransactionDescription | null = UNIVERSAL_ROUTER[
+            blockchain.name
+          ].parseTransaction({
+            data: tx.data
+          });
+          // Multicalls
+          if (parsedTx && parsedTx.name === 'multicall') {
+            if (parsedTx.args.length > 1) {
+              // Position 1 is the multicall encoded data
+              parsedTx.args[1].forEach((txData: string) => {
+                const parsedSingleTx: TransactionDescription | null = UNIVERSAL_ROUTER[
+                  blockchain.name
+                ].parseTransaction({ data: txData });
+                if (parsedSingleTx) {
+                  const pairAB: PairAB | null = pairABfromSingleCall(parsedSingleTx);
+                  if (pairAB) {
+                    pairsAB.push(pairAB);
+                  }
                 }
-              }
-            });
+              });
+            }
           }
-        }
-        // Single calls
-        if (parsedTx && parsedTx.name !== 'multicall') {
-          const pairAB: PairAB | null = pairABfromSingleCall(parsedTx);
-          if (pairAB) {
-            pairsAB.push();
+          // Single calls
+          if (parsedTx && parsedTx.name !== 'multicall') {
+            const pairAB: PairAB | null = pairABfromSingleCall(parsedTx);
+            if (pairAB) {
+              pairsAB.push(pairAB);
+            }
           }
-        }
-	});
-	// Generate traded pair addresses with repetitios.
-	const pairAddresses: Array<string> = fromPairsAB(key, pairsAB);
-	// Adding traded pair addresses.
-	tradedPairAddresses[key] = pairAddresses;
+        });
+        // Generate traded pair addresses with repetitios.
+        // TODO: review how to build pairsAB for v3 routers.
+        const pairAddresses: Array<string> = fromPairsAB('PCAKESWAP_V2', pairsAB);
+        // Adding traded pair addresses.
+        tradedPairAddrs[protocolCode] = pairAddresses;
       });
     } catch (error) {
       const ethError: EthersError = error as EthersError;
@@ -107,7 +107,7 @@ export async function getTradedPairs(
             ` retrying get transactions for block ${blockNumber}`,
           { module: 'Transactions' }
         );
-	// TODO: Read this from a config file.
+        // TODO: Read this from a config file.
         await sleep(3000);
         return await parseWithAttempts(attempts - 1, backendSelector.next().value);
       } else {
@@ -115,7 +115,7 @@ export async function getTradedPairs(
           module: 'Liquidity'
         });
         throw new OracleError({
-          name: 'PROVIDER_ERROR',
+          name: 'TRANSACTIONS_ERROR',
           message: `Failed getting transactions for block ${blockNumber}`,
           cause: error
         });
@@ -123,13 +123,13 @@ export async function getTradedPairs(
     }
   }
   await parseWithAttempts(attempts, backendSelector.next().value);
-  return tradedPairAddresses;
+  return tradedPairAddrs;
 }
 
 // Utility functions
 function pairABfromSingleCall(parsedTx: TransactionDescription): PairAB | null {
   // Router v2 swaps
-  if (parsedTx && /^swap.+/.test(parsedTx.name)) {
+  if (/^swap.+/.test(parsedTx.name)) {
     if (parsedTx.args.path && parsedTx.args.path.length > 1) {
       return {
         tokenA: String(parsedTx.args.path[0]),
@@ -138,7 +138,7 @@ function pairABfromSingleCall(parsedTx: TransactionDescription): PairAB | null {
     }
   }
   // Router v3 single swaps
-  if (parsedTx && /^(exactInputSingle|exactOutputSingle)$/.test(parsedTx.name)) {
+  if (/^(exactInputSingle|exactOutputSingle)$/.test(parsedTx.name)) {
     if (parsedTx.args.params) {
       return {
         tokenA: String(parsedTx.args.params.tokenIn),
@@ -147,7 +147,7 @@ function pairABfromSingleCall(parsedTx: TransactionDescription): PairAB | null {
     }
   }
   // Router v3 multihop swaps
-  if (parsedTx && /^(exactInput|exactOutput)$/.test(parsedTx.name)) {
+  if (/^(exactInput|exactOutput)$/.test(parsedTx.name)) {
     if (parsedTx.args.params.path) {
       const path: string = parsedTx.args.params.path;
       switch (dataLength(path)) {

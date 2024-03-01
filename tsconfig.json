@@ -4,7 +4,7 @@
     "outDir": "./dist",
     "target": "esnext",
     "module": "esnext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "allowJs": true,
@@ -12,7 +12,7 @@
     "declaration": true,
     "declarationMap": true,
     "declarationDir": "./types",
-    "inlineSourceMap": true, // for tslog
+    "inlineSourceMap": true,
     "forceConsistentCasingInFileNames": true,
     "strict": true,
     "noImplicitAny": true,
@@ -22,7 +22,6 @@
     "skipLibCheck": true
   },
   "include": ["./src/**/*.ts"],
-  "exclude": ["./tests/", "./public_html/"],
   "ts-node": {
     "esm": true
   }
