@@ -14,19 +14,21 @@ export async function getTradedPairs(
     attempts?: number;
     backendSelector?: Generator<number>;
   } = {}
-): Promise<AddrsByProtocol> {
+): Promise<AddrsByProtocol | null> {
   // Store traded pair addresses by protocol with repetitions.
   const tradedPairAddrs: AddrsByProtocol = {} as AddrsByProtocol;
+  // Arranging transactions for each protocol
+  const routersTransactions: TxsByProtocol = {} as TxsByProtocol;
+
   // TODO: read attempts from config file.
-  const attempts: number = options.attempts ?? 3;
+  const attempts: number = options.attempts ?? blockchain.attempts;
   const backendSelector: Generator<number> =
     options.backendSelector ?? BackendSelector('fullNode', blockchain.name);
 
   async function parseWithAttempts(
     attempts: number,
     backendPosition: number
-  ): Promise<void> {
-    try {
+  ): Promise<Array<TransactionResponse> | null> {
       const provider: CustomRpcProvider = new CustomRpcProvider(
         'fullNode',
         blockchain.name,
@@ -40,65 +42,22 @@ export async function getTradedPairs(
       // If network error or similar, destroy the provider will throw an error.
       provider.on('error', () => provider.destroy());
 
+    try {
       // Getting the entire block for the given blockNumber
       const block: Block | null = await provider.getBlock(blockNumber);
       if (!block) {
-        return;
+	logger.error(
+	  `Block ${blockNumber} could not be fetched.`, { module: 'Transactions' }
+	)
+        return null;
       }
-      // Get data of all transactions in batches.
+      // Get data of all transactions.
       const txs: Array<TransactionResponse> = await Promise.all(
         block.transactions.map(async (txHash: string) => {
           return await block.getTransaction(txHash);
         })
       );
-
-      // Arranging transactions for each protocol
-      const routersTransactions: TxsByProtocol = {} as TxsByProtocol;
-
-      PROTOCOLS[blockchain.name].forEach((protocolCode: ProtocolCode) => {
-        const pairsAB: Array<PairAB> = [];
-        // Adding each protocol transactions
-        routersTransactions[protocolCode] = txs.filter((tx: TransactionResponse) => {
-          return ROUTER_ADDRESS[protocolCode] === tx.to ?? '';
-        });
-        // Parsing each transaction for each protocol
-        routersTransactions[protocolCode].forEach((tx: TransactionResponse) => {
-          const parsedTx: TransactionDescription | null = UNIVERSAL_ROUTER[
-            blockchain.name
-          ].parseTransaction({
-            data: tx.data
-          });
-          // Multicalls
-          if (parsedTx && parsedTx.name === 'multicall') {
-            if (parsedTx.args.length > 1) {
-              // Position 1 is the multicall encoded data
-              parsedTx.args[1].forEach((txData: string) => {
-                const parsedSingleTx: TransactionDescription | null = UNIVERSAL_ROUTER[
-                  blockchain.name
-                ].parseTransaction({ data: txData });
-                if (parsedSingleTx) {
-                  const pairAB: PairAB | null = pairABfromSingleCall(parsedSingleTx);
-                  if (pairAB) {
-                    pairsAB.push(pairAB);
-                  }
-                }
-              });
-            }
-          }
-          // Single calls
-          if (parsedTx && parsedTx.name !== 'multicall') {
-            const pairAB: PairAB | null = pairABfromSingleCall(parsedTx);
-            if (pairAB) {
-              pairsAB.push(pairAB);
-            }
-          }
-        });
-        // Generate traded pair addresses with repetitios.
-        // TODO: review how to build pairsAB for v3 routers.
-        const pairAddresses: Array<string> = fromPairsAB('PCAKESWAP_V2', pairsAB);
-        // Adding traded pair addresses.
-        tradedPairAddrs[protocolCode] = pairAddresses;
-      });
+      return txs;
     } catch (error) {
       const ethError: EthersError = error as EthersError;
       if (attempts > 1) {
@@ -108,7 +67,7 @@ export async function getTradedPairs(
           { module: 'Transactions' }
         );
         // TODO: Read this from a config file.
-        await sleep(3000);
+        await sleep(blockchain.sleep);
         return await parseWithAttempts(attempts - 1, backendSelector.next().value);
       } else {
         logger.error(`${ethError.shortMessage ?? ethError.message}. ${ethError.code}.`, {
@@ -122,8 +81,60 @@ export async function getTradedPairs(
       }
     }
   }
-  await parseWithAttempts(attempts, backendSelector.next().value);
-  return tradedPairAddrs;
+
+  const txs: Array<TransactionResponse> | null =
+    await parseWithAttempts(attempts, backendSelector.next().value);
+
+  if (txs) {
+    PROTOCOLS[blockchain.name].forEach((protocolCode: ProtocolCode) => {
+      const pairsAB: Array<PairAB> = [];
+      // Adding each protocol transactions
+      routersTransactions[protocolCode] = txs.filter((tx: TransactionResponse) => {
+        return ROUTER_ADDRESS[protocolCode] === (tx ? tx.to : '');
+      });
+      // Parsing each transaction for each protocol
+      routersTransactions[protocolCode].forEach((tx: TransactionResponse) => {
+        const parsedTx: TransactionDescription | null = UNIVERSAL_ROUTER[
+          blockchain.name
+        ].parseTransaction({
+          data: tx.data
+        });
+        // Multicalls
+        if (parsedTx && parsedTx.name === 'multicall') {
+          if (parsedTx.args.length > 1) {
+            // Position 1 is the multicall encoded data
+            parsedTx.args[1].forEach((txData: string) => {
+              const parsedSingleTx: TransactionDescription | null = UNIVERSAL_ROUTER[
+                blockchain.name
+              ].parseTransaction({ data: txData });
+              if (parsedSingleTx) {
+                const pairAB: PairAB | null = pairABfromSingleCall(parsedSingleTx);
+                if (pairAB) {
+                  pairsAB.push(pairAB);
+                }
+              }
+            });
+          }
+        }
+        // Single calls
+        if (parsedTx && parsedTx.name !== 'multicall') {
+          const pairAB: PairAB | null = pairABfromSingleCall(parsedTx);
+          if (pairAB) {
+            pairsAB.push(pairAB);
+          }
+        }
+      });
+      // Generate traded pair addresses with repetitios.
+      // TODO: review how to build pairsAB for v3 routers.
+      const pairAddresses: Array<string> = fromPairsAB('PCAKESWAP_V2', pairsAB);
+      // Adding traded pair addresses.
+      tradedPairAddrs[protocolCode] = pairAddresses;
+    });
+    
+    return tradedPairAddrs;
+  } else {
+    return null;
+  }
 }
 
 // Utility functions
