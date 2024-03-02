@@ -29,26 +29,26 @@ export async function getTradedPairs(
     attempts: number,
     backendPosition: number
   ): Promise<Array<TransactionResponse> | null> {
-      const provider: CustomRpcProvider = new CustomRpcProvider(
-        'fullNode',
-        blockchain.name,
-        {
-          backendPosition: backendPosition
-        }
-      );
-      logger.silly(`Backend: ${new URL(provider.url).hostname}.`, {
-        module: 'Transactions'
-      });
-      // If network error or similar, destroy the provider will throw an error.
-      provider.on('error', () => provider.destroy());
+    const provider: CustomRpcProvider = new CustomRpcProvider(
+      'fullNode',
+      blockchain.name,
+      {
+        backendPosition: backendPosition
+      }
+    );
+    logger.silly(`Backend: ${new URL(provider.url).hostname}.`, {
+      module: 'Transactions'
+    });
+    // If network error or similar, destroy the provider will throw an error.
+    provider.on('error', () => provider.destroy());
 
     try {
       // Getting the entire block for the given blockNumber
       const block: Block | null = await provider.getBlock(blockNumber);
       if (!block) {
-	logger.error(
-	  `Block ${blockNumber} could not be fetched.`, { module: 'Transactions' }
-	)
+        logger.error(`Block ${blockNumber} could not be fetched.`, {
+          module: 'Transactions'
+        });
         return null;
       }
       // Get data of all transactions.
@@ -82,8 +82,10 @@ export async function getTradedPairs(
     }
   }
 
-  const txs: Array<TransactionResponse> | null =
-    await parseWithAttempts(attempts, backendSelector.next().value);
+  const txs: Array<TransactionResponse> | null = await parseWithAttempts(
+    attempts,
+    backendSelector.next().value
+  );
 
   if (txs) {
     PROTOCOLS[blockchain.name].forEach((protocolCode: ProtocolCode) => {
@@ -130,7 +132,7 @@ export async function getTradedPairs(
       // Adding traded pair addresses.
       tradedPairAddrs[protocolCode] = pairAddresses;
     });
-    
+
     return tradedPairAddrs;
   } else {
     return null;
