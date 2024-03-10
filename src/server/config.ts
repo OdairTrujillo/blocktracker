@@ -1,7 +1,12 @@
 import dotenv from 'dotenv';
-import { ApiConfig } from 'libchainstream';
+import { ServerConfig } from 'libchainstream';
 
 dotenv.config();
+
+export interface ApiConfig {
+  server: ServerConfig;
+  trace: boolean;
+}
 
 export const config: ApiConfig = {
   server: {

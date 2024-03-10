@@ -5,7 +5,7 @@ import morgan from 'morgan';
 import { logger, ApiError } from 'libchainstream';
 
 import { api } from './api/v1/index.js';
-import { config } from '../config.js';
+import { config } from './config.js';
 
 // Setup morgan middleware
 const requestFormat: string = ':remote-addr [:date[iso]] ":method :url" :status.';
@@ -13,7 +13,7 @@ const morganStream: RequestHandler = morgan(requestFormat, {
   stream: {
     write: (message: string) => {
       // Write info removing all line breaks
-      return logger.info(message.trim());
+      return logger.info(message.trim(), { module: 'BlockTracker' });
     }
   }
 });
@@ -59,9 +59,13 @@ app.use((err: ApiError, req: Request, res: Response, next: NextFunction) => {
   // Extracting message and setting default values.
   const { stack = 'No trace :(', message, level = 'error', statusCode = 500 } = err;
   if (level === 'error') {
-    logger.error(`${config.trace ? stack : message}. Code: ${statusCode}`);
+    logger.error(`${config.trace ? stack : message}. Code: ${statusCode}`, {
+      module: 'BlockTracker'
+    });
   } else {
-    logger.info(`${config.trace ? stack : message}. Code: ${statusCode}`);
+    logger.info(`${config.trace ? stack : message}. Code: ${statusCode}`, {
+      module: 'BlockTracker'
+    });
   }
 
   res.status(statusCode);

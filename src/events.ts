@@ -1,5 +1,5 @@
-import { Blockchain, CustomRpcProvider, BackendSelector } from 'libchainstream';
-import { ProtocolCode, AddrsByProtocol, UniqueAddrsByProtocol } from 'libchainstream';
+import { CustomRpcProvider, BackendSelector } from 'libchainstream';
+import { AddrsByProtocol, UniqueAddrsByProtocol } from 'libchainstream';
 import { AddrsByChain, UniqueAddrsByChain, PROTOCOLS } from 'libchainstream';
 import { Config, logger, saveObject, readObject } from 'libchainstream';
 
@@ -17,14 +17,14 @@ const initUniquePairAddr: UniqueAddrsByProtocol = {} as UniqueAddrsByProtocol;
 
 export function newBlock() {
   // Register event for new blocks for each unique blockchain provider.
-  Config.blockchains.forEach((blockchain: Blockchain) => {
+  for (const blockchain of Config.blockchains) {
     // Creating properties with blockchain as key with empty arrays and sets.
-    PROTOCOLS[blockchain.name].forEach((protocolCode: ProtocolCode) => {
+    for (const protocolCode of PROTOCOLS[blockchain.name]) {
       initPairAddrs[protocolCode] = [];
       initUniquePairAddr[protocolCode] = new Set();
       pairsPool[blockchain.name] = initPairAddrs;
       uniquePairsPool[blockchain.name] = initUniquePairAddr;
-    });
+    }
 
     const backendSelector: Generator<number> = BackendSelector(
       'regularNode',
@@ -44,7 +44,7 @@ export function newBlock() {
         );
         // Process pairs if there were protocols traded.
         if (tradedPairAddrs && Object.keys(tradedPairAddrs).length > 0) {
-          PROTOCOLS[blockchain.name].forEach((protocolCode: ProtocolCode) => {
+          for (const protocolCode of PROTOCOLS[blockchain.name]) {
             // Ading protocol pairs addresses by blockchain.
             pairsPool[blockchain.name][protocolCode].push(
               ...tradedPairAddrs[protocolCode]
@@ -53,11 +53,11 @@ export function newBlock() {
             for (const pairAddress of tradedPairAddrs[protocolCode]) {
               uniquePairsPool[blockchain.name][protocolCode].add(pairAddress);
             }
-          });
+          }
         } else {
           logger.warn(
             `Trades for block ${blockNumber} could not be fetched. ` +
-              `Continuing with the next block.`,
+              `Continuing from the next block.`,
             { module: 'Transactions' }
           );
         }
@@ -70,9 +70,9 @@ export function newBlock() {
       historyPool.push(structuredClone(pairsPool));
       let elapsedIntervals: number = historyPool.length;
       // Flush recent recieved pairs.
-      PROTOCOLS[blockchain.name].forEach((protocolCode: ProtocolCode) => {
+      for (const protocolCode of PROTOCOLS[blockchain.name]) {
         pairsPool[blockchain.name][protocolCode] = [];
-      });
+      }
       // Removing the elder element of history pool
       if (elapsedIntervals > blockchain.cacheCapacity) {
         historyPool.shift();
@@ -80,12 +80,12 @@ export function newBlock() {
       }
       // Safe flush for unique pairs if api calls did not flushed it.
       if (elapsedIntervals > Config.cacheSafeFlush) {
-        PROTOCOLS[blockchain.name].forEach((protocolCode: ProtocolCode) => {
+        for (const protocolCode of PROTOCOLS[blockchain.name]) {
           uniquePairsPool[blockchain.name][protocolCode].clear();
-        });
+        }
       }
       // Caching historyPool in case of program exit.
       saveObject(historyPool, 'historyPool.json');
     }, blockchain.cacheInterval);
-  });
+  }
 }

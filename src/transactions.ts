@@ -2,7 +2,7 @@ import { Block, TransactionResponse, EthersError } from 'ethers';
 import { TransactionDescription, dataSlice, getAddress, dataLength } from 'ethers';
 import { CustomRpcProvider, BackendSelector, PairAB } from 'libchainstream';
 import { Blockchain, ProtocolCode } from 'libchainstream';
-import { logger, fromPairsAB, sleep, OracleError } from 'libchainstream';
+import { logger, fromPairsAB, sleep, CustomError } from 'libchainstream';
 import { TxsByProtocol, AddrsByProtocol } from 'libchainstream';
 import { PROTOCOLS, ROUTER_ADDRESS, UNIVERSAL_ROUTER } from 'libchainstream';
 
@@ -73,7 +73,7 @@ export async function getTradedPairs(
         logger.error(`${ethError.shortMessage ?? ethError.message}. ${ethError.code}.`, {
           module: 'Liquidity'
         });
-        throw new OracleError({
+        throw new CustomError({
           name: 'TRANSACTIONS_ERROR',
           message: `Failed getting transactions for block ${blockNumber}`,
           cause: error
