@@ -58,7 +58,7 @@ export function newBlock() {
           logger.warn(
             `Trades for block ${blockNumber} could not be fetched. ` +
               `Continuing from the next block.`,
-            { module: 'Transactions' }
+            { module: 'BlockTracker' }
           );
         }
       }
