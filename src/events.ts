@@ -1,31 +1,18 @@
-import {
-  CustomRpcProvider,
-  BackendSelector,
-  AddressCount,
-  AddrsByChain
-} from 'libchainstream';
-import {
-  AddrsByProtocol,
-  UniqueAddrsByProtocol,
-  AddrsCountByChain
-} from 'libchainstream';
-import {
-  AddrsByProtocolByChain,
-  UniqueAddrsByProtocolByChain,
-  PROTOCOLS
-} from 'libchainstream';
+import { CustomRpcProvider, BackendSelector, AddressCount } from 'libchainstream';
+import { AddrsByChain, AddrsByProtocol, UniqueAddrsByProtocol } from 'libchainstream';
+import { AddrsCountByChain, AddrsByProtoByChain } from 'libchainstream';
+import { UniqAddrsByProtoByChain, PROTOCOLS } from 'libchainstream';
 import { Config, logger, saveObject, readObject } from 'libchainstream';
 
 import { getTradedPairs } from './transactions.js';
-import { protocol } from 'electron';
 
 // Objects tu be used with the API controllers
-export const pairsPool: AddrsByProtocolByChain = {} as AddrsByProtocolByChain;
-export const uniquePairsPool: UniqueAddrsByProtocolByChain =
-  {} as UniqueAddrsByProtocolByChain;
+export const pairsPool: AddrsByProtoByChain = {} as AddrsByProtoByChain;
+export const uniquePairsPool: UniqAddrsByProtoByChain =
+  {} as UniqAddrsByProtoByChain;
 // This array will store 24 hours of traded pairs.
 export const historyPool: Array<AddrsCountByChain> = readObject('historypool.json', []);
-export const uniqueHistoryPool: Array<UniqueAddrsByProtocolByChain> = readObject(
+export const uniqueHistoryPool: Array<UniqAddrsByProtoByChain> = readObject(
   'uniquehistorypool.json',
   []
 );
