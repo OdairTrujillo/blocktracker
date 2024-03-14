@@ -1,7 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import {
-  Chain,
-  AddrsByProtocol,
+import { Chain, AddrsByProtocol,
   AddrsCountByChain,
   AddrsByProtocolByChain,
   AddressCount

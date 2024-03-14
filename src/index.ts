@@ -3,7 +3,7 @@ import { logger } from 'libchainstream';
 
 import { app } from './server/index.js';
 import { config } from './server/config.js';
-import { newBlock } from './events.js';
+import { trackTrades } from './tracekr.js';
 
 import './mods.js'; // Polyfill
 
