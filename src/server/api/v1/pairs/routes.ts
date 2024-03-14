@@ -1,6 +1,6 @@
 import express, { Router, Request, Response, NextFunction } from 'express';
 
-import { traded, hot } from './controller.js';
+import { traded, tradedCount } from './controller.js';
 
 export const pairs: Router = express.Router();
 
@@ -9,6 +9,6 @@ pairs.route('/traded').post((req: Request, res: Response, next: NextFunction) =>
   traded(req, res, next);
 });
 
-pairs.route('/hot').post((req: Request, res: Response, next: NextFunction) => {
-  hot(req, res, next);
+pairs.route('/tradedcount').post((req: Request, res: Response, next: NextFunction) => {
+  tradedCount(req, res, next);
 });
