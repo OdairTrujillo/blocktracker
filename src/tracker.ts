@@ -68,7 +68,7 @@ export function trackTrades() {
         toAddrsCount(tradedPairsPool[blockchain.name])
       );
       // Add one interval of data.
-      historyPool.push(addrsCountByChain);
+      historyPool.push(structuredClone(addrsCountByChain));
       // Flush recent recieved pairs.
       tradedPairsPool[blockchain.name] = [];
 
