@@ -1,7 +1,7 @@
-import { Block, TransactionResponse, EthersError } from 'ethers';
+import { Block, EthersError, PerformActionRequest } from 'ethers';
 import { TransactionDescription, dataSlice, getAddress, dataLength } from 'ethers';
 import { CustomRpcProvider, BackendSelector, PairAB } from 'libchainstream';
-import { Blockchain, ProtocolCode } from 'libchainstream';
+import { Blockchain, ProtocolCode, PerformTxResponse } from 'libchainstream';
 import { logger, fromPairsAB, sleep, CustomError } from 'libchainstream';
 import { TxsByProtocol, AddrsByProtocol } from 'libchainstream';
 import { PROTOCOLS, ROUTER_ADDRESS, UNIVERSAL_ROUTER } from 'libchainstream';
@@ -28,7 +28,7 @@ export async function getTradedPairs(
   async function parseWithAttempts(
     attempts: number,
     backendPosition: number
-  ): Promise<Array<TransactionResponse> | null> {
+  ): Promise<Array<PerformTxResponse> | null> {
     const provider: CustomRpcProvider = new CustomRpcProvider(
       'fullNode',
       blockchain.name,
@@ -52,9 +52,10 @@ export async function getTradedPairs(
         return null;
       }
       // Get data of all transactions.
-      const txs: Array<TransactionResponse> = await Promise.all(
+      const txs: Array<PerformTxResponse> = await Promise.all(
         block.transactions.map(async (txHash: string) => {
-          return await block.getTransaction(txHash);
+          const req: PerformActionRequest = { method: 'getTransaction', hash: txHash };
+          return await provider._perform(req);
         })
       );
       return txs;
@@ -82,7 +83,7 @@ export async function getTradedPairs(
     }
   }
 
-  const txs: Array<TransactionResponse> | null = await parseWithAttempts(
+  const txs: Array<PerformTxResponse> | null = await parseWithAttempts(
     attempts,
     backendSelector.next().value
   );
@@ -91,15 +92,15 @@ export async function getTradedPairs(
     PROTOCOLS[blockchain.name].forEach((protocolCode: ProtocolCode) => {
       const pairsAB: Array<PairAB> = [];
       // Adding each protocol transactions
-      routersTransactions[protocolCode] = txs.filter((tx: TransactionResponse) => {
+      routersTransactions[protocolCode] = txs.filter((tx: PerformTxResponse) => {
         return ROUTER_ADDRESS[protocolCode] === (tx ? tx.to : '');
       });
       // Parsing each transaction for each protocol
-      routersTransactions[protocolCode].forEach((tx: TransactionResponse) => {
+      routersTransactions[protocolCode].forEach((tx: PerformTxResponse) => {
         const parsedTx: TransactionDescription | null = UNIVERSAL_ROUTER[
           blockchain.name
         ].parseTransaction({
-          data: tx.data
+          data: tx.input
         });
         // Multicalls
         if (parsedTx && parsedTx.name === 'multicall') {

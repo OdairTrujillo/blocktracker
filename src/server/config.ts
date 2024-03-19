@@ -1,7 +1,4 @@
-import dotenv from 'dotenv';
 import { ServerConfig } from 'libchainstream';
-
-dotenv.config();
 
 export interface ApiConfig {
   server: ServerConfig;

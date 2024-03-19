@@ -39,14 +39,14 @@ app.use(express.json());
 // Setup router and routes
 app.use('/api/v1', api);
 
-app.get('/', (req: Request, res: Response, next: NextFunction) => {
+app.get('/', (_req: Request, res: Response, _next: NextFunction) => {
   res.json({
     message: 'Welcome to BlockTracker API.'
   });
 });
 
 // Handler for no route found
-app.use((req: Request, res: Response, next: NextFunction) => {
+app.use((_req: Request, _res: Response, next: NextFunction) => {
   next({
     message: 'Route not found',
     statusCode: 404,
@@ -55,7 +55,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 });
 
 // Handler for other errors.
-app.use((err: ApiError, req: Request, res: Response, next: NextFunction) => {
+app.use((err: ApiError, _req: Request, res: Response, _next: NextFunction) => {
   // Extracting message and setting default values.
   const { stack = 'No trace :(', message, level = 'error', statusCode = 500 } = err;
   if (level === 'error') {
