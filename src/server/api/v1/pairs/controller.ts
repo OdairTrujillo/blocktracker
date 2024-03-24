@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { Chain, AddrsByProtocol, AddrsCountByChain, TradesCount, TradesCountByChain } from 'libchainstream';
+import { Chain, AddrsByProtocol, TradesCount, TradesCountByChain } from 'libchainstream';
 import { Config, Blockchain, PROTOCOLS, CustomError } from 'libchainstream';
 
 import { uniquePairsPool, historyPool } from '../../../../tracker.js';
@@ -87,7 +87,12 @@ export async function tradedCount(req: Request, res: Response, next: NextFunctio
               }
               // If the key does not exists create it with its respective value.
               else {
-                accumulator[pairAddress] = {trades: pairTradesCount[pairAddress].trades, protocolCode: pairTradesCount[pairAddress].protocolCode }
+                accumulator[pairAddress] = {
+                  trades: pairTradesCount[pairAddress].trades,
+                  protocolCode: pairTradesCount[pairAddress].protocolCode,
+                  priceUsd: pairTradesCount[pairAddress].priceUsd,
+                  liquidityUsd: pairTradesCount[pairAddress].liquidityUsd
+                };
               }
             }
             return accumulator;
@@ -97,11 +102,14 @@ export async function tradedCount(req: Request, res: Response, next: NextFunctio
         const sortedPairsCount: TradesCount = sortTradesCount(pairsCount, listLength);
         const pairsCountSize: number = Object.keys(sortedPairsCount).length;
 
+        const sortedPairsCountbyChain: TradesCountByChain = {} as TradesCountByChain;
+        sortedPairsCountbyChain[blockchain.name] = sortedPairsCount;
+
         if (pairsCountSize > 0) {
           res.status(200).json({
             success: true,
             message: `${pairsCountSize} Traded pairs found for ${chain}.`,
-            data: sortedPairsCount
+            data: sortedPairsCountbyChain
           });
         } else {
           res.status(404).json({
@@ -140,9 +148,10 @@ export async function tradedCount(req: Request, res: Response, next: NextFunctio
                   } else {
                     accumulator[chain][tradesAddress] = {
                       trades: pairsCountByChain[chain][tradesAddress].trades,
-                      protocolCode: pairsCountByChain[chain][tradesAddress].protocolCode
-                    }
-                      
+                      protocolCode: pairsCountByChain[chain][tradesAddress].protocolCode,
+                      priceUsd: pairsCountByChain[chain][tradesAddress].priceUsd,
+                      liquidityUsd: pairsCountByChain[chain][tradesAddress].liquidityUsd
+                    };
                   }
                 }
               } else {
@@ -186,6 +195,4 @@ export async function tradedCount(req: Request, res: Response, next: NextFunctio
   } catch (error) {
     next(error);
   }
-
-
 }

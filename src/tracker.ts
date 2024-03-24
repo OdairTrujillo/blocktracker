@@ -1,14 +1,12 @@
-import { FixedNumber } from 'ethers';
 import { CustomRpcProvider, BackendSelector } from 'libchainstream';
-import { AddrsByChain, AddrsByProtocol, UniqueAddrsByProtocol, AddrsByChainByProto } from 'libchainstream';
-import { TradesCountByChain } from 'libchainstream'
-import { AddrsCountByChain, UniqAddrsByChainByProto, PROTOCOLS } from 'libchainstream';
+import {
+  AddrsByProtocol,
+  UniqueAddrsByProtocol,
+  AddrsByChainByProto
+} from 'libchainstream';
+import { TradesCountByChain } from 'libchainstream';
+import { UniqAddrsByChainByProto, PROTOCOLS } from 'libchainstream';
 import { Config, logger, saveObject, readObject } from 'libchainstream';
-import { PairElement, Blockchain, Protocol } from 'libchainstream';
-import { PriceData, PairReserves, Reserves } from 'libchainstream';
-import { Price01, Numeric, ReserveFullElement } from 'libchainstream';
-import { BigNumberish, delayedLogger } from 'libchainstream';
-import { Liquidity, Pairs } from 'oracle';
 import { getTradedPairs } from './transactions.js';
 import { toTradesCount, sortTradesCount } from './utils.js';
 
@@ -23,17 +21,17 @@ export function trackTrades() {
   // Init objects
   const initUniquePairAddr: UniqueAddrsByProtocol = {} as UniqueAddrsByProtocol;
   // Register event for new blocks for each unique blockchain provider.
-  
+
   for (const blockchain of Config.blockchains) {
     // Init objects with empty sets for each blockchain
 
     tradedPairsPool[blockchain.name] = {} as AddrsByProtocol;
-    
+
     for (const protocolCode of PROTOCOLS[blockchain.name]) {
       initUniquePairAddr[protocolCode] = new Set();
       tradedPairsPool[blockchain.name][protocolCode] = [];
     }
-    
+
     uniquePairsPool[blockchain.name] = initUniquePairAddr;
 
     const backendSelector: Generator<number> = BackendSelector(
@@ -56,7 +54,9 @@ export function trackTrades() {
         if (tradedPairAddrs && Object.keys(tradedPairAddrs).length > 0) {
           for (const protocolCode of PROTOCOLS[blockchain.name]) {
             // Ading pairs traded for each protocol.
-            tradedPairsPool[blockchain.name][protocolCode].push(...tradedPairAddrs[protocolCode]);
+            tradedPairsPool[blockchain.name][protocolCode].push(
+              ...tradedPairAddrs[protocolCode]
+            );
             // Adding unique pairs traded by blockchain and protocol.
             for (const pairAddress of tradedPairAddrs[protocolCode]) {
               uniquePairsPool[blockchain.name][protocolCode].add(pairAddress);
@@ -71,14 +71,14 @@ export function trackTrades() {
         }
       }
     });
-    
+
     // Store pairs that were fetched each time interval.
     setInterval(async () => {
       //Count pairs repetitions and sort them by repetition count.
       tradesCountByChain[blockchain.name] = sortTradesCount(
-        toTradesCount(tradedPairsPool[blockchain.name])
+        await toTradesCount(tradedPairsPool[blockchain.name])
       );
-      
+
       // Add one interval of data.
       historyPool.push(structuredClone(tradesCountByChain));
       // Flush recent recieved pairs.
@@ -106,4 +106,3 @@ export function trackTrades() {
     }, blockchain.cacheInterval * 1000);
   }
 }
-
