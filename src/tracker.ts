@@ -1,37 +1,38 @@
+import { FixedNumber } from 'ethers';
 import { CustomRpcProvider, BackendSelector } from 'libchainstream';
 import { AddrsByChain, AddrsByProtocol, UniqueAddrsByProtocol, AddrsByChainByProto } from 'libchainstream';
+import { TradesCountByChain } from 'libchainstream'
 import { AddrsCountByChain, UniqAddrsByChainByProto, PROTOCOLS } from 'libchainstream';
 import { Config, logger, saveObject, readObject } from 'libchainstream';
-
+import { PairElement, Blockchain, Protocol } from 'libchainstream';
+import { PriceData, PairReserves, Reserves } from 'libchainstream';
+import { Price01, Numeric, ReserveFullElement } from 'libchainstream';
+import { BigNumberish, delayedLogger } from 'libchainstream';
+import { Liquidity, Pairs } from 'oracle';
 import { getTradedPairs } from './transactions.js';
-import { toAddrsCount, sortAddrsCount } from './utils.js';
+import { toTradesCount, sortTradesCount } from './utils.js';
 
 // Objects tu be used with the API controllers
 export const uniquePairsPool: UniqAddrsByChainByProto = {} as UniqAddrsByChainByProto;
 // This array will store 24 hours of traded pairs.
-export const historyPool: Array<AddrsCountByChain> = readObject('historypool.json', []);
+export const historyPool: Array<TradesCountByChain> = readObject('historypool.json', []);
 
 export function trackTrades() {
   const tradedPairsPool: AddrsByChainByProto = {} as AddrsByChainByProto;
-  const addrsCountByChain: AddrsCountByChain = {} as AddrsCountByChain;
+  const tradesCountByChain: TradesCountByChain = {} as TradesCountByChain;
   // Init objects
   const initUniquePairAddr: UniqueAddrsByProtocol = {} as UniqueAddrsByProtocol;
   // Register event for new blocks for each unique blockchain provider.
   
-  
   for (const blockchain of Config.blockchains) {
     // Init objects with empty sets for each blockchain
 
-    if (!tradedPairsPool[blockchain.name]) {
-      // Si no está definida, inicializarla con un objeto vacío
-      tradedPairsPool[blockchain.name] = {} as AddrsByProtocol;
-    }
-
+    tradedPairsPool[blockchain.name] = {} as AddrsByProtocol;
+    
     for (const protocolCode of PROTOCOLS[blockchain.name]) {
       initUniquePairAddr[protocolCode] = new Set();
       tradedPairsPool[blockchain.name][protocolCode] = [];
     }
-    
     
     uniquePairsPool[blockchain.name] = initUniquePairAddr;
 
@@ -60,7 +61,6 @@ export function trackTrades() {
             for (const pairAddress of tradedPairAddrs[protocolCode]) {
               uniquePairsPool[blockchain.name][protocolCode].add(pairAddress);
             }
-            console.log("PARES",tradedPairAddrs)
           }
         } else {
           logger.warn(
@@ -69,39 +69,41 @@ export function trackTrades() {
             { module: 'BlockTracker' }
           );
         }
-        console.log("Traded",tradedPairsPool)
       }
     });
     
     // Store pairs that were fetched each time interval.
     setInterval(async () => {
-      //console.log("Traded",tradedPairsPool)
-      // Count pairs repetitions and sort them by repetition count.
-      // addrsCountByChain[blockchain.name] = sortAddrsCount(
-      //   toAddrsCount(tradedPairsPool[blockchain.name])
-      // );
-      // // Add one interval of data.
-      // historyPool.push(structuredClone(addrsCountByChain));
-      // // Flush recent recieved pairs.
-      // tradedPairsPool[blockchain.name] = [];
+      //Count pairs repetitions and sort them by repetition count.
+      tradesCountByChain[blockchain.name] = sortTradesCount(
+        toTradesCount(tradedPairsPool[blockchain.name])
+      );
+      
+      // Add one interval of data.
+      historyPool.push(structuredClone(tradesCountByChain));
+      // Flush recent recieved pairs.
+      for (const protocolCode of PROTOCOLS[blockchain.name]) {
+        tradedPairsPool[blockchain.name][protocolCode] = [];
+      }
 
-      // let elapsedIntervals: number = historyPool.length;
+      let elapsedIntervals: number = historyPool.length;
 
-      // // Removing the elder element of history pool
-      // if (elapsedIntervals > blockchain.cacheCapacity) {
-      //   historyPool.shift();
-      //   elapsedIntervals = historyPool.length;
-      // }
+      // Removing the elder element of history pool
+      if (elapsedIntervals > blockchain.cacheCapacity) {
+        historyPool.shift();
+        elapsedIntervals = historyPool.length;
+      }
 
-      // // Safe flush for unique pairs if API calls did not flushed it.
-      // if (elapsedIntervals > Config.cacheSafeFlush) {
-      //   for (const protocolCode of PROTOCOLS[blockchain.name]) {
-      //     uniquePairsPool[blockchain.name][protocolCode].clear();
-      //   }
-      // }
+      // Safe flush for unique pairs if API calls did not flushed it.
+      if (elapsedIntervals > Config.cacheSafeFlush) {
+        for (const protocolCode of PROTOCOLS[blockchain.name]) {
+          uniquePairsPool[blockchain.name][protocolCode].clear();
+        }
+      }
 
-      // // Caching historyPool in case of program exit.
-      // saveObject(historyPool, 'historypool.json');
+      // Caching historyPool in case of program exit.
+      saveObject(historyPool, 'historypool.json');
     }, blockchain.cacheInterval * 1000);
   }
 }
+

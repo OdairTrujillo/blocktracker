@@ -1,10 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
-import { Chain, AddrsByProtocol, AddrsCountByChain } from 'libchainstream';
-import { AddressesCount } from 'libchainstream';
+import { Chain, AddrsByProtocol, AddrsCountByChain, TradesCount, TradesCountByChain } from 'libchainstream';
 import { Config, Blockchain, PROTOCOLS, CustomError } from 'libchainstream';
 
 import { uniquePairsPool, historyPool } from '../../../../tracker.js';
-import { sortAddrsCount } from '../../../../utils.js';
+import { sortTradesCount } from '../../../../utils.js';
 
 export async function traded(req: Request, res: Response, next: NextFunction) {
   const { body = {} } = req;
@@ -76,38 +75,38 @@ export async function tradedCount(req: Request, res: Response, next: NextFunctio
 	  map: remove the Chain key of each AddressesCount child object.
 	  reduce: get the summation of coincident pair address into a new object.
 	*/
-        const pairsCount: AddressesCount = structuredClone(historyPool)
+        const pairsCount: TradesCount = structuredClone(historyPool)
           .slice(-timeWindow)
-          .filter((item: AddrsCountByChain) => item[blockchain.name] !== undefined)
-          .map((item: AddrsCountByChain) => item[blockchain.name])
-          .reduce((accumulator: AddressesCount, pairAddrsCount: AddressesCount) => {
-            for (const pairAddress in pairAddrsCount) {
+          .filter((item: TradesCountByChain) => item[blockchain.name] !== undefined)
+          .map((item: TradesCountByChain) => item[blockchain.name])
+          .reduce((accumulator: TradesCount, pairTradesCount: TradesCount) => {
+            for (const pairAddress in pairTradesCount) {
               // Check if key pairAddress exists before try to sume its value.
               if (accumulator[pairAddress]) {
-                accumulator[pairAddress] += pairAddrsCount[pairAddress];
+                accumulator[pairAddress].trades += pairTradesCount[pairAddress].trades;
               }
               // If the key does not exists create it with its respective value.
               else {
-                accumulator[pairAddress] = pairAddrsCount[pairAddress];
+                accumulator[pairAddress] = {trades: pairTradesCount[pairAddress].trades, protocolCode: pairTradesCount[pairAddress].protocolCode }
               }
             }
             return accumulator;
-          }, {} as AddressesCount);
+          }, {} as TradesCount);
 
         // Finally sort descending and slice the final result.
-        const sortedPairsCount: AddressesCount = sortAddrsCount(pairsCount, listLength);
+        const sortedPairsCount: TradesCount = sortTradesCount(pairsCount, listLength);
         const pairsCountSize: number = Object.keys(sortedPairsCount).length;
 
         if (pairsCountSize > 0) {
           res.status(200).json({
             success: true,
-            message: `${pairsCountSize} tallied pairs found for ${chain}.`,
+            message: `${pairsCountSize} Traded pairs found for ${chain}.`,
             data: sortedPairsCount
           });
         } else {
           res.status(404).json({
             success: false,
-            message: `No tallied pairs found for ${chain}.`,
+            message: `No traded pairs found for ${chain}.`,
             data: {}
           });
         }
@@ -125,22 +124,25 @@ export async function tradedCount(req: Request, res: Response, next: NextFunctio
 	slice: get the last desired units of Config.cacheInterval (minutes) of the history.
 	reduce: get the summation of coincident pair address by blockchain into a new object.
       */
-      const pairsCount: AddrsCountByChain = structuredClone(historyPool)
+      const pairsCount: TradesCountByChain = structuredClone(historyPool)
         .slice(-timeWindow)
         .reduce(
-          (accumulator: AddrsCountByChain, pairsCountByChain: AddrsCountByChain) => {
+          (accumulator: TradesCountByChain, pairsCountByChain: TradesCountByChain) => {
             // Iterate over chain keys
             for (const key in pairsCountByChain) {
               const chain: Chain = key as Chain;
               if (accumulator[chain]) {
                 // Iterate AddressesCount for each chain.
-                for (const addressesCount in pairsCountByChain[chain]) {
-                  if (accumulator[chain][addressesCount]) {
-                    accumulator[chain][addressesCount] +=
-                      pairsCountByChain[chain][addressesCount];
+                for (const tradesAddress in pairsCountByChain[chain]) {
+                  if (accumulator[chain][tradesAddress]) {
+                    accumulator[chain][tradesAddress].trades +=
+                      pairsCountByChain[chain][tradesAddress].trades;
                   } else {
-                    accumulator[chain][addressesCount] =
-                      pairsCountByChain[chain][addressesCount];
+                    accumulator[chain][tradesAddress] = {
+                      trades: pairsCountByChain[chain][tradesAddress].trades,
+                      protocolCode: pairsCountByChain[chain][tradesAddress].protocolCode
+                    }
+                      
                   }
                 }
               } else {
@@ -149,19 +151,19 @@ export async function tradedCount(req: Request, res: Response, next: NextFunctio
             }
             return accumulator;
           },
-          {} as AddrsCountByChain
+          {} as TradesCountByChain
         );
 
       // Finally sort and slice the list for each blockchain
-      const sortedPairsCount: AddrsCountByChain = {} as AddrsCountByChain;
+      const sortedPairsCount: TradesCountByChain = {} as TradesCountByChain;
       for (const key in pairsCount) {
         const chain: Chain = key as Chain;
-        sortedPairsCount[chain] = sortAddrsCount(pairsCount[chain], listLength);
+        sortedPairsCount[chain] = sortTradesCount(pairsCount[chain], listLength);
       }
 
       // Sum each AddressesCount item for all the blockchains.
       const pairsCountSize: number = Object.values(sortedPairsCount).reduce(
-        (accumulator: number, addressesCount: AddressesCount) => {
+        (accumulator: number, addressesCount: TradesCount) => {
           return accumulator + Object.keys(addressesCount).length;
         },
         0
@@ -170,13 +172,13 @@ export async function tradedCount(req: Request, res: Response, next: NextFunctio
       if (pairsCountSize > 0) {
         res.status(200).json({
           success: true,
-          message: `${pairsCountSize} tallied pairs for all blockchains.`,
+          message: `${pairsCountSize} Traded pairs for all blockchains.`,
           data: sortedPairsCount
         });
       } else {
         res.status(404).json({
           success: false,
-          message: `No tallied pairs found for all blockchains.`,
+          message: `No traded pairs found for all blockchains.`,
           data: {}
         });
       }
@@ -184,4 +186,6 @@ export async function tradedCount(req: Request, res: Response, next: NextFunctio
   } catch (error) {
     next(error);
   }
+
+
 }

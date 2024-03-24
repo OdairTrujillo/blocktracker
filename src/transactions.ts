@@ -1,10 +1,12 @@
 import { Block, EthersError, PerformActionRequest } from 'ethers';
 import { TransactionDescription, dataSlice, getAddress, dataLength } from 'ethers';
-import { CustomRpcProvider, BackendSelector, PairAB } from 'libchainstream';
+import { CustomRpcProvider, BackendSelector, PairAB, PairElement } from 'libchainstream';
 import { Blockchain, ProtocolCode, PerformTxResponse } from 'libchainstream';
 import { logger, fromPairsAB, sleep, CustomError } from 'libchainstream';
 import { TxsByProtocol, AddrsByProtocol } from 'libchainstream';
 import { PROTOCOLS, ROUTER_ADDRESS, UNIVERSAL_ROUTER } from 'libchainstream';
+import { Config, Protocol } from 'libchainstream'
+import { Pairs } from 'oracle'
 
 // Get the traded pairs whithin a block by protocol
 export async function getTradedPairs(
@@ -89,11 +91,11 @@ export async function getTradedPairs(
   );
 
   if (txs) {
-    PROTOCOLS[blockchain.name].forEach((protocolCode: ProtocolCode) => {
+    for (const protocolCode of PROTOCOLS[blockchain.name]) {
       const pairsAB: Array<PairAB> = [];
       // Adding each protocol transactions
       routersTransactions[protocolCode] = txs.filter((tx: PerformTxResponse) => {
-        return ROUTER_ADDRESS[protocolCode] === (tx ? tx.to : '');
+        return ROUTER_ADDRESS[protocolCode].toLowerCase() === (tx ? tx.to : '');
       });
       // Parsing each transaction for each protocol
       routersTransactions[protocolCode].forEach((tx: PerformTxResponse) => {
@@ -129,10 +131,19 @@ export async function getTradedPairs(
       });
       // Generate traded pair addresses with repetitios.
       // TODO: review how to build pairsAB for v3 routers.
-      const pairAddresses: Array<string> = fromPairsAB('PCAKESWAP_V2', pairsAB);
+      // const pairAddresses: Array<string> = fromPairsAB('PCAKESWAP_V2', pairsAB);
+      const protocols:Array<Protocol> = Config.protocols.filter(
+          (protocol: Protocol) => protocol.code === 'PCAKESWAP_V2'
+      );
+      const pairsElements: Array<PairElement> = await Pairs.callPairs(blockchain, protocols[0], { pairsAB: pairsAB })
+      const pairAddresses: Array<string> = pairsElements.map((pairElement: PairElement) => pairElement.pairAddress)
+
       // Adding traded pair addresses.
-      tradedPairAddrs[protocolCode] = pairAddresses;
-    });
+
+      // TODO: Make it for all protocols
+      tradedPairAddrs['PCAKESWAP_V2'] = pairAddresses;
+      tradedPairAddrs['PCAKESWAP_V3'] = []
+    }
 
     return tradedPairAddrs;
   } else {

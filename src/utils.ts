@@ -1,28 +1,29 @@
-import { AddressesCount } from 'libchainstream';
+import { AddrsByProtocol,TradesCount, ProtocolCode, TradesDetails } from 'libchainstream';
 
-export function toAddrsCount(pairAddresses: string[]): AddressesCount {
-  const frequencyMap: AddressesCount = {};
-  for (const pairAddress of pairAddresses) {
-    /* Create the property and assign its value, if property value does not
-       exists assign it 0 and add 1. If property exists add 1 to its value. */
-    frequencyMap[pairAddress] = (frequencyMap[pairAddress] || 0) + 1;
+export function toTradesCount(addrsByProtocol: AddrsByProtocol): TradesCount {
+  const frequencyMap: TradesCount = {};
+  for (const protocolCode in addrsByProtocol) {
+    const pairAddresses: Array<string> = addrsByProtocol[protocolCode as ProtocolCode]
+    for (let i:number = 0; i < pairAddresses.length; i++){
+      frequencyMap[pairAddresses[i]] = frequencyMap[pairAddresses[i]] === undefined 
+      ? { trades: 1, protocolCode: protocolCode }
+      : { trades: frequencyMap[pairAddresses[i]].trades + 1, protocolCode: protocolCode }
+    }
   }
   return frequencyMap;
 }
 
-export function sortAddrsCount(
-  addressesCount: AddressesCount,
+export function sortTradesCount(
+  tradesCount: TradesCount,
   listLength?: number
-): AddressesCount {
+): TradesCount {
   // Converts the AddressesCount into a matrix with elements of [key, value]
-  const entries: Array<[string, number]> = Object.entries(addressesCount);
-
+  const entries: Array<[string, TradesDetails]> = Object.entries(tradesCount);
   /* Descendent sort, if the result of substracting values is positive
      shifts nextEntry with currentEntry. */
-  entries.sort((currentEntry, nextEntry) => nextEntry[1] - currentEntry[1]);
-
+  entries.sort((currentEntry, nextEntry) => nextEntry[1].trades - currentEntry[1].trades);
   // Converts the sorted matrix into an AddrssCount object.
-  const sortedAddrsCount: AddressesCount = {};
+  const sortedAddrsCount: TradesCount = {};
   for (const entry of listLength ? entries.slice(0, listLength) : entries) {
     sortedAddrsCount[entry[0]] = entry[1];
   }
