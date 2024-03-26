@@ -4,13 +4,14 @@ import {
   ProtocolCode,
   TradesDetails
 } from 'libchainstream';
-import { FixedNumber } from 'ethers';
 import { PairElement, Blockchain, Protocol } from 'libchainstream';
 import { PairReserves, Reserves } from 'libchainstream';
-import { Price01, Numeric, ReserveFullElement } from 'libchainstream';
-import { BigNumberish, delayedLogger, Config, PairsPriceData } from 'libchainstream';
+import { Price01, ReserveFullElement } from 'libchainstream';
+import { Config, PairsPriceData } from 'libchainstream';
 import { Liquidity, Pairs } from 'oracle';
-import { padReserves, priceCalc, PaddedReserves } from  'dexapi';
+import { liquidityCalc, priceCalc } from 'libchainstream';
+
+import { WBNB, USDT, WBNB_USDT } from 'libchainstream';
 
 export async function toTradesCount(
   addrsByProtocol: AddrsByProtocol
@@ -105,7 +106,6 @@ async function calcHotData(
     }
   );
 
-  const WBNB_USDT: string = '0x16b9a82891338f9bA80E2D6970FddA79D1eb0daE';
   const WBNB_PRICE: number = await (async () => {
     const wbnbreserves: Array<PairReserves> = await Liquidity.getReserves(
       blockchain,
@@ -121,12 +121,9 @@ async function calcHotData(
       reserve1: wbnbreserves[0].reserve1,
       blockTimestamp: wbnbreserves[0].blockTimestamp
     };
-    const price01: Price01 = priceCalc(reserves, WBNB_USDT, 18n, 18n);
+    const price01: Price01 = priceCalc(reserves, WBNB_USDT, 18, 18);
     return price01.price1;
   })();
-
-  const WBNB: string = '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c';
-  const USDT: string = '0x55d398326f99059fF775485246999027B3197955';
 
   const hotPriceData: PairsPriceData = reserveFullElements.reduce(
     (accumulator, reservefullelement) => {
@@ -136,13 +133,13 @@ async function calcHotData(
         blockTimestamp: reservefullelement.blockTimestamp
       };
 
+      // TODO: Move tokenPriceUSd calculation to function and for all chains
       const price01: Price01 = priceCalc(
         reserves,
         reservefullelement.pairAddress,
-        reservefullelement.token0Decimals,
-        reservefullelement.token1Decimals
+        Number(reservefullelement.token0Decimals),
+        Number(reservefullelement.token1Decimals)
       );
-
       const price: number =
         reservefullelement.token0Address === WBNB ||
         reservefullelement.token0Address === USDT
@@ -156,48 +153,26 @@ async function calcHotData(
             ? price * WBNB_PRICE
             : price
           : price;
-      
-      const paddReserves: PaddedReserves = padReserves(reserves,
+
+      // TODO: Fix this for all blockchains
+      const liquidityUsd: number = liquidityCalc(
+        reserves,
+        reservefullelement.token0Address,
+        reservefullelement.token1Address,
         reservefullelement.token0Decimals,
-        reservefullelement.token1Decimals)
-
-      const reserve0: number = FixedNumber.fromValue(
-        paddReserves.reserve0,
-        (reservefullelement.token0Decimals as Numeric) ?? undefined
-      ).toUnsafeFloat()*10**paddReserves.removed0Decimals;
-      const reserve1: number = FixedNumber.fromValue(
-        paddReserves.reserve1,
-        (reservefullelement.token1Decimals as Numeric) ?? undefined
-      ).toUnsafeFloat()*10**paddReserves.removed1Decimals;
-
-      const reserve0Usd: number =
-        reservefullelement.token0Address === WBNB
-          ? reserve0 * WBNB_PRICE
-          : reservefullelement.token0Address === USDT
-            ? reserve0
-            : reserve0 * tokenPriceUsd;
-      const reserve1Usd: number =
-        reservefullelement.token1Address === WBNB
-          ? reserve1 * WBNB_PRICE
-          : reservefullelement.token1Address === USDT
-            ? reserve1
-            : reserve1 * tokenPriceUsd;
-      const liquidity: number = reserve0Usd + reserve1Usd;
+        reservefullelement.token1Decimals,
+        tokenPriceUsd,
+        WBNB_PRICE
+      );
 
       accumulator[reservefullelement.pairAddress] = {
         priceUsd: tokenPriceUsd,
-        liquidityUsd: liquidity
+        liquidityUsd: liquidityUsd
       };
 
       return accumulator;
     },
     {} as PairsPriceData
   );
-
   return hotPriceData;
-}
-
-interface TruncateReserves extends Reserves{
-  token0Decimals: number;
-  token1Decimals: number
 }

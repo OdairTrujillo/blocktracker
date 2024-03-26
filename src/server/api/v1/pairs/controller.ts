@@ -84,8 +84,9 @@ export async function tradedCount(req: Request, res: Response, next: NextFunctio
               // Check if key pairAddress exists before try to sume its value.
               if (accumulator[pairAddress]) {
                 accumulator[pairAddress].trades += pairTradesCount[pairAddress].trades;
-                accumulator[pairAddress].priceUsd = pairTradesCount[pairAddress].priceUsd
-                accumulator[pairAddress].liquidityUsd = pairTradesCount[pairAddress].liquidityUsd
+                accumulator[pairAddress].priceUsd = pairTradesCount[pairAddress].priceUsd;
+                accumulator[pairAddress].liquidityUsd =
+                  pairTradesCount[pairAddress].liquidityUsd;
               }
               // If the key does not exists create it with its respective value.
               else {
