@@ -99,8 +99,7 @@ export async function getTradedPairs(
       });
       // Parsing each transaction for each protocol
       routersTransactions[protocolCode].forEach((tx: PerformTxResponse) => {
-        const parsedTx: TransactionDescription | null =
-	  UNIVERSAL_ROUTER[
+        const parsedTx: TransactionDescription | null = UNIVERSAL_ROUTER[
           blockchain.name
         ].parseTransaction({
           data: tx.input
