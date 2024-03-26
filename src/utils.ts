@@ -10,6 +10,7 @@ import { PairReserves, Reserves } from 'libchainstream';
 import { Price01, Numeric, ReserveFullElement } from 'libchainstream';
 import { BigNumberish, delayedLogger, Config, PairsPriceData } from 'libchainstream';
 import { Liquidity, Pairs } from 'oracle';
+import { padReserves, priceCalc, PaddedReserves } from  'dexapi';
 
 export async function toTradesCount(
   addrsByProtocol: AddrsByProtocol
@@ -155,15 +156,19 @@ async function calcHotData(
             ? price * WBNB_PRICE
             : price
           : price;
+      
+      const paddReserves: PaddedReserves = padReserves(reserves,
+        reservefullelement.token0Decimals,
+        reservefullelement.token1Decimals)
 
       const reserve0: number = FixedNumber.fromValue(
-        reserves.reserve0,
+        paddReserves.reserve0,
         (reservefullelement.token0Decimals as Numeric) ?? undefined
-      ).toUnsafeFloat();
+      ).toUnsafeFloat()*10**paddReserves.removed0Decimals;
       const reserve1: number = FixedNumber.fromValue(
-        reserves.reserve1,
+        paddReserves.reserve1,
         (reservefullelement.token1Decimals as Numeric) ?? undefined
-      ).toUnsafeFloat();
+      ).toUnsafeFloat()*10**paddReserves.removed1Decimals;
 
       const reserve0Usd: number =
         reservefullelement.token0Address === WBNB
@@ -192,33 +197,7 @@ async function calcHotData(
   return hotPriceData;
 }
 
-function priceCalc(
-  reserves: Reserves,
-  pairAddress: string,
-  token0Decimals: BigNumberish | null,
-  token1Decimals: BigNumberish | null
-): Price01 {
-  let price0: number = 0;
-  let price1: number = 0;
-  // Some pairs will throw a NumericFaultError due zero liquidity or heavily unbalanced
-  try {
-    const reserve0: FixedNumber = FixedNumber.fromValue(
-      reserves.reserve0,
-      (token0Decimals as Numeric) ?? undefined // null fusion operator
-    );
-    const reserve1: FixedNumber = FixedNumber.fromValue(
-      reserves.reserve1,
-      (token1Decimals as Numeric) ?? undefined
-    );
-    price0 = reserve1.div(reserve0).toUnsafeFloat();
-    price1 = reserve0.div(reserve1).toUnsafeFloat();
-  } catch (error) {
-    delayedLogger('error', 10, `Error for pair: ${pairAddress}: ${error}`, {
-      module: 'Utils'
-    });
-  }
-  return {
-    price0: price0,
-    price1: price1
-  } as Price01;
+interface TruncateReserves extends Reserves{
+  token0Decimals: number;
+  token1Decimals: number
 }
