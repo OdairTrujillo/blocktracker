@@ -4,6 +4,7 @@
   "description": "Tracks blockchains for blocks transactions and serves data via API",
   "type": "module",
   "main": "dist/index.js",
+  "types": "./types/",
   "scripts": {
     "build": "rimraf dist && npx tsc",
     "build:all": "npm run build",
@@ -55,6 +56,7 @@
     "ethers": "6.10.0",
     "express": "^4.18.2",
     "libchainstream": "file:../libchainstream",
+    "dexapi": "file:../dexapi",
     "morgan": "^1.10.0",
     "winston": "^3.11.0"
   }

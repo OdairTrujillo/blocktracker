@@ -34,7 +34,6 @@ export async function traded(req: Request, res: Response, next: NextFunction) {
           message: `${uniquePairsPoolSize} pairs were traded for ${chain}.`,
           data: responseUniquePairs
         });
-        // await sleep(2000);
         // flush data to start over.
         for (const protocolCode of PROTOCOLS[blockchain.name]) {
           uniquePairsPool[blockchain.name][protocolCode].clear();
