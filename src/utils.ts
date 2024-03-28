@@ -6,7 +6,7 @@ import {
 } from 'libchainstream';
 import { PairElement, Blockchain, Protocol } from 'libchainstream';
 import { PairReserves, Reserves } from 'libchainstream';
-import { Price01, ReserveFullElement } from 'libchainstream';
+import { Price01, PairReservesElement } from 'libchainstream';
 import { Config, PairsPriceData } from 'libchainstream';
 import { Liquidity, Pairs } from 'oracle';
 import { liquidityCalc, priceCalc } from 'libchainstream';
@@ -73,7 +73,6 @@ export function sortTradesCount(
   for (const entry of listLength ? entries.slice(0, listLength) : entries) {
     sortedAddrsCount[entry[0]] = entry[1];
   }
-
   return sortedAddrsCount;
 }
 
@@ -83,28 +82,40 @@ async function calcHotData(
   protocol: Protocol,
   blockTag: string | number
 ): Promise<PairsPriceData> {
-  const pairsAddresses: Array<string> = pairsElements.map(
+  const pairAddresses: Array<string> = pairsElements.map(
     (pairElement: PairElement) => pairElement.pairAddress
   );
-  const reservesElements: Array<PairReserves> = await Liquidity.getReserves(
+  const pairsReserves: Array<PairReserves> = await Liquidity.getReserves(
     blockchain,
     protocol,
-    pairsAddresses,
+    pairAddresses,
     {
       blockTag: blockTag,
       attempts: 2
     }
   );
-  const reserveFullElements: Array<ReserveFullElement> = pairsElements.map(
-    (pairElement: PairElement, index: number) => {
-      const reservesElement: PairReserves = reservesElements[index];
-      return {
-        ...pairElement,
-        ...reservesElement,
-        block: reservesElement.block
-      };
-    }
-  );
+
+  // PairReservesElement cannot has null properties.
+  const pairReservesElements: Array<PairReservesElement> = pairsElements
+    .map(
+      (pairElement: PairElement, index: number) => {
+        return {
+          token0Address: pairElement.token0Address,
+          token0Decimals: pairElement.token0Decimals,
+          token1Address: pairElement.token1Address,
+          token1Decimals: pairElement.token1Decimals,
+          ...pairsReserves[index]
+        } as PairReservesElement;
+      } // Filter item if some of these properties is null.
+    )
+    .filter((item) => {
+      const someNull: boolean =
+        item.token0Address === null ||
+        item.token0Decimals === null ||
+        item.token1Address === null ||
+        item.token1Decimals === null;
+      return !someNull;
+    });
 
   const WBNB_PRICE: number = await (async () => {
     const wbnbreserves: Array<PairReserves> = await Liquidity.getReserves(
@@ -125,31 +136,29 @@ async function calcHotData(
     return price01.price1;
   })();
 
-  const hotPriceData: PairsPriceData = reserveFullElements.reduce(
-    (accumulator, reservefullelement) => {
+  const hotPriceData: PairsPriceData = pairReservesElements.reduce(
+    (accumulator: PairsPriceData, item: PairReservesElement) => {
       const reserves: Reserves = {
-        reserve0: reservefullelement.reserve0,
-        reserve1: reservefullelement.reserve1,
-        blockTimestamp: reservefullelement.blockTimestamp
+        reserve0: item.reserve0,
+        reserve1: item.reserve1,
+        blockTimestamp: item.blockTimestamp
       };
 
       // TODO: Move tokenPriceUSd calculation to function and for all chains
       const price01: Price01 = priceCalc(
         reserves,
-        reservefullelement.pairAddress,
-        Number(reservefullelement.token0Decimals),
-        Number(reservefullelement.token1Decimals)
+        item.pairAddress,
+        Number(item.token0Decimals),
+        Number(item.token1Decimals)
       );
       const price: number =
-        reservefullelement.token0Address === WBNB ||
-        reservefullelement.token0Address === USDT
+        item.token0Address === WBNB || item.token0Address === USDT
           ? price01.price1
           : price01.price0;
 
       const tokenPriceUsd: number =
-        reservefullelement.pairAddress !== WBNB_USDT
-          ? reservefullelement.token0Address === WBNB ||
-            reservefullelement.token1Address === WBNB
+        item.pairAddress !== WBNB_USDT
+          ? item.token0Address === WBNB || item.token1Address === WBNB
             ? price * WBNB_PRICE
             : price
           : price;
@@ -157,15 +166,15 @@ async function calcHotData(
       // TODO: Fix this for all blockchains
       const liquidityUsd: number = liquidityCalc(
         reserves,
-        reservefullelement.token0Address,
-        reservefullelement.token1Address,
-        reservefullelement.token0Decimals,
-        reservefullelement.token1Decimals,
+        item.token0Address,
+        item.token1Address,
+        Number(item.token0Decimals),
+        Number(item.token1Decimals),
         tokenPriceUsd,
         WBNB_PRICE
       );
 
-      accumulator[reservefullelement.pairAddress] = {
+      accumulator[item.pairAddress] = {
         priceUsd: tokenPriceUsd,
         liquidityUsd: liquidityUsd
       };

@@ -19,6 +19,7 @@
     "noImplicitReturns": true,
     "strictNullChecks": true,
     "strictFunctionTypes": true,
+    "noImplicitOverride": true,
     "skipLibCheck": true
   },
   "include": ["./src/**/*.ts"],
