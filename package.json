@@ -12,8 +12,7 @@
     "start": "npm run build && node --no-warnings dist/index.js",
     "start:prod": "npm run build:all && cross-env NODE_ENV=production node dist/index.js",
     "test": "cross-env NODE_ENV=test NODE_OPTIONS=--experimental-vm-modules npx jest --detectOpenHandles",
-    "lint": "eslint ./src --ext .ts",
-    "lint:fix": "eslint ./src --ext .ts --fix",
+    "lint": "eslint ./src --ext .ts --fix",
     "format": "prettier --config .prettierrc 'src/**/*.ts' --write",
     "prepare": "husky install"
   },

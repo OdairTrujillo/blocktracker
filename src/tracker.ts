@@ -1,41 +1,43 @@
-import { CustomRpcProvider, BackendSelector } from 'libchainstream';
-import {
-  AddrsByProtocol,
-  UniqueAddrsByProtocol,
-  AddrsByChainByProto
-} from 'libchainstream';
-import { TradesCountByChain } from 'libchainstream';
-import { UniqAddrsByChainByProto, PROTOCOLS } from 'libchainstream';
-import { Config, logger, saveObject, readObject } from 'libchainstream';
+import { CustomRpcProvider, BackendSelector, PairsElmByProtocol } from 'libchainstream';
+import { PairElement, UniqueAddrsByProtocol } from 'libchainstream';
+import { PairsByChain, PairsByProtocol } from 'libchainstream';
+import { TradesCountByChain, PairsElmByChain } from 'libchainstream';
+import { UniqAddrsByChain } from 'libchainstream';
+import { Config, logger, saveObject, readObject, Protocol } from 'libchainstream';
 import { getTradedPairs } from './transactions.js';
 import { toTradesCount, sortTradesCount } from './utils.js';
+import { Pairs } from 'oracle';
+import { fullBackendSelectors } from './index.js';
 
 // Objects tu be used with the API controllers
-export const uniquePairsPool: UniqAddrsByChainByProto = {} as UniqAddrsByChainByProto;
+export const uniquePairsPool: UniqAddrsByChain = {} as UniqAddrsByChain;
 // This array will store 24 hours of traded pairs.
 export const historyPool: Array<TradesCountByChain> = readObject('historypool.json', []);
 
 export function trackTrades() {
-  const tradedPairsPool: AddrsByChainByProto = {} as AddrsByChainByProto;
+  const tradedPairsPool: PairsByChain = {} as PairsByChain;
   const tradesCountByChain: TradesCountByChain = {} as TradesCountByChain;
   // Init objects
   const initUniquePairAddr: UniqueAddrsByProtocol = {} as UniqueAddrsByProtocol;
   // Register event for new blocks for each unique blockchain provider.
 
   for (const blockchain of Config.blockchains) {
+    const protocols: Array<Protocol> = Config.protocols.filter(
+      (protocol: Protocol) => protocol.chain === blockchain.name
+    );
     // Init objects with empty sets for each blockchain
 
-    tradedPairsPool[blockchain.name] = {} as AddrsByProtocol;
+    tradedPairsPool[blockchain.name] = {} as PairsByProtocol;
 
-    for (const protocolCode of PROTOCOLS[blockchain.name]) {
-      initUniquePairAddr[protocolCode] = new Set();
-      tradedPairsPool[blockchain.name][protocolCode] = [];
+    for (const protocol of protocols) {
+      initUniquePairAddr[protocol.code] = new Set();
+      tradedPairsPool[blockchain.name][protocol.code] = [];
     }
 
     uniquePairsPool[blockchain.name] = initUniquePairAddr;
 
     const backendSelector: Generator<number> = BackendSelector(
-      'regularNode',
+      'fullNode',
       blockchain.name
     );
     const provider: CustomRpcProvider = new CustomRpcProvider(
@@ -45,22 +47,18 @@ export function trackTrades() {
 
     provider.on('block', async (blockNumber: number) => {
       if (blockNumber % 3 === 0) {
-        const tradedPairAddrs: AddrsByProtocol | null = await getTradedPairs(
+        const tradedPairsAB: PairsByProtocol | null = await getTradedPairs(
           blockchain,
           blockNumber,
           { backendSelector: backendSelector }
         );
         // Process pairs if there were protocols traded.
-        if (tradedPairAddrs && Object.keys(tradedPairAddrs).length > 0) {
-          for (const protocolCode of PROTOCOLS[blockchain.name]) {
+        if (tradedPairsAB && Object.keys(tradedPairsAB).length > 0) {
+          for (const protocol of protocols) {
             // Ading pairs traded for each protocol.
-            tradedPairsPool[blockchain.name][protocolCode].push(
-              ...tradedPairAddrs[protocolCode]
+            tradedPairsPool[blockchain.name][protocol.code].push(
+              ...tradedPairsAB[protocol.code]
             );
-            // Adding unique pairs traded by blockchain and protocol.
-            for (const pairAddress of tradedPairAddrs[protocolCode]) {
-              uniquePairsPool[blockchain.name][protocolCode].add(pairAddress);
-            }
           }
         } else {
           logger.warn(
@@ -74,16 +72,40 @@ export function trackTrades() {
 
     // Store pairs that were fetched each time interval.
     setInterval(async () => {
+      // Call pairs elements from pairsAB.
+      const pairsElmByChain: PairsElmByChain = {} as PairsElmByChain;
+      // Loop to fill pairs elements by chain object.
+      for (const protocol of protocols) {
+        const pairsElements: Array<PairElement> = await Pairs.callPairs(
+          blockchain,
+          protocol,
+          { pairsAB: tradedPairsPool[blockchain.name][protocol.code] },
+          { backendSelector: fullBackendSelectors[blockchain.name] }
+        );
+
+        // Adding unique pairs traded by blockchain and protocol.
+        const pairAddresses: Array<string> = pairsElements.map(
+          (pairElement: PairElement) => pairElement.pairAddress
+        );
+        for (const pairAddress of pairAddresses) {
+          uniquePairsPool[blockchain.name][protocol.code].add(pairAddress);
+        }
+
+        const pairsElmByProtocol: PairsElmByProtocol = {} as PairsElmByProtocol;
+        pairsElmByProtocol[protocol.code] = pairsElements;
+        pairsElmByChain[blockchain.name] = pairsElmByProtocol;
+      }
+
       //Count pairs repetitions and sort them by repetition count.
       tradesCountByChain[blockchain.name] = sortTradesCount(
-        await toTradesCount(tradedPairsPool[blockchain.name])
+        await toTradesCount(pairsElmByChain[blockchain.name])
       );
 
       // Add one interval of data.
       historyPool.push(structuredClone(tradesCountByChain));
       // Flush recent recieved pairs.
-      for (const protocolCode of PROTOCOLS[blockchain.name]) {
-        tradedPairsPool[blockchain.name][protocolCode] = [];
+      for (const protocol of protocols) {
+        tradedPairsPool[blockchain.name][protocol.code] = [];
       }
 
       let elapsedIntervals: number = historyPool.length;
@@ -96,8 +118,8 @@ export function trackTrades() {
 
       // Safe flush for unique pairs if API calls did not flushed it.
       if (elapsedIntervals > Config.cacheSafeFlush) {
-        for (const protocolCode of PROTOCOLS[blockchain.name]) {
-          uniquePairsPool[blockchain.name][protocolCode].clear();
+        for (const protocol of protocols) {
+          uniquePairsPool[blockchain.name][protocol.code].clear();
         }
       }
 
