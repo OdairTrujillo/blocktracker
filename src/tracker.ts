@@ -9,19 +9,19 @@ import {
 import { PairElement, UniqueAddrsByProtocol } from 'libchainstream';
 import { PairsByChain, PairsByProtocol } from 'libchainstream';
 import { TradesCountByChain, PairsElmByChain } from 'libchainstream';
-import { UniqAddrsByChain, Chain } from 'libchainstream';
+import { UniqAddrsByChain } from 'libchainstream';
 import { Config, logger, saveObject, readObject, Protocol } from 'libchainstream';
-import { Oracle } from 'oracle';
+import { Oracle, evalPairsElements } from 'oracle';
 
 import { getTradedPairs } from './transactions.js';
 import { toTradesCount, sortTradesCount } from './utils.js';
+import { oracles } from './index.js';
 
-type OraclesByChain = { [key in Chain]: Array<Oracle> };
 // Objects tu be used with the API controllers
 export const uniquePairsPool: UniqAddrsByChain = {} as UniqAddrsByChain;
 // This array will store 24 hours of traded pairs.
 export const historyPool: Array<TradesCountByChain> = readObject('historypool.json', []);
-export const oracles: OraclesByChain = {} as OraclesByChain;
+// Oracle to query pair elements and reserves, also to sync by pair created.
 
 export function trackTrades() {
   const tradedPairsPool: PairsByChain = {} as PairsByChain;
@@ -93,6 +93,10 @@ export function trackTrades() {
           const pairsElements: Array<PairElement> = oracle.poolsFeed.getPairsElements({
             pairsAB: tradedPairsPool[blockchain.name][protocol.code]
           });
+          // Eval tu enable recent trades pairs elements.
+          await evalPairsElements(blockchain, protocol, pairsElements, {
+            withDbWrite: true
+          });
 
           // Adding unique pairs traded by blockchain and protocol.
           const pairAddresses: Array<string> = pairsElements.map(
@@ -142,23 +146,12 @@ export function trackTrades() {
 }
 
 export async function trackCreatedPairs() {
-  logger.info(`Initializing oracles ...`, { module: 'BlockTracker' });
   for (const blockchain of Config.blockchains) {
+    // Getting protocols available.
     const protocols: Array<Protocol> = Config.protocols.filter(
       (protocol: Protocol) => protocol.chain === blockchain.name
     );
-    // Preparing oracles promises.
-    const oraclePromises: Array<Promise<Oracle>> = protocols.map(
-      async (protocol: Protocol) => {
-        const pairs: object = { startIndex: 0 };
-        const options: object = { pairsCount: 1000, withDbRead: true, withDbWrite: true };
-        const oracle: Oracle = new Oracle(blockchain, protocol, { isReadonly: false });
-        await oracle.init(pairs, options);
-        return oracle;
-      }
-    );
-    oracles[blockchain.name] = await Promise.all(oraclePromises);
-
+    // Registering events on each protocol.
     for (const protocol of protocols) {
       const oracle: Oracle | undefined = oracles[blockchain.name].find(
         (oracle: Oracle) => oracle.protocol.code === protocol.code
@@ -168,12 +161,15 @@ export async function trackCreatedPairs() {
           'regularNode',
           blockchain.name
         );
+
+        // TODO: make it for v3.
         const factoryContract: Contract = new Contract(
           FACTORY_ADDRESS['PCAKESWAP_V2'],
           FACTORY_ABI['PCAKESWAP_V2'],
           provider
         );
 
+        // Register event pair created on factory
         factoryContract.on(
           'PairCreated',
           async (_token0: string, _token1: string, _pair: string, _event: bigint) => {
@@ -182,6 +178,10 @@ export async function trackCreatedPairs() {
                 module: 'BlockTracker'
               });
               await oracle.syncPoolsFeed();
+            } else {
+              logger.silly(`${oracle.protocol.code} is bussy syncing pairs.`, {
+                module: 'BlockTracker '
+              });
             }
           }
         );
