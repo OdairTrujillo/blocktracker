@@ -11,11 +11,10 @@ import { PairsByChain, PairsByProtocol } from 'libchainstream';
 import { TradesCountByChain, PairsElmByChain } from 'libchainstream';
 import { UniqAddrsByChain, Chain } from 'libchainstream';
 import { Config, logger, saveObject, readObject, Protocol } from 'libchainstream';
-import { Pairs, Oracle } from 'oracle';
+import { Oracle } from 'oracle';
 
 import { getTradedPairs } from './transactions.js';
 import { toTradesCount, sortTradesCount } from './utils.js';
-import { fullBackendSelectors } from './index.js';
 
 type OraclesByChain = { [key in Chain]: Array<Oracle> };
 // Objects tu be used with the API controllers
@@ -86,24 +85,27 @@ export function trackTrades() {
       const pairsElmByChain: PairsElmByChain = {} as PairsElmByChain;
       // Loop to fill pairs elements by chain object.
       for (const protocol of protocols) {
-        const pairsElements: Array<PairElement> = await Pairs.callPairs(
-          blockchain,
-          protocol,
-          { pairsAB: tradedPairsPool[blockchain.name][protocol.code] },
-          { backendSelector: fullBackendSelectors[blockchain.name] }
+        const oracle: Oracle | undefined = oracles[blockchain.name].find(
+          (oracle: Oracle) => oracle.protocol.code === protocol.code
         );
 
-        // Adding unique pairs traded by blockchain and protocol.
-        const pairAddresses: Array<string> = pairsElements.map(
-          (pairElement: PairElement) => pairElement.pairAddress
-        );
-        for (const pairAddress of pairAddresses) {
-          uniquePairsPool[blockchain.name][protocol.code].add(pairAddress);
+        if (oracle) {
+          const pairsElements: Array<PairElement> = oracle.poolsFeed.getPairsElements({
+            pairsAB: tradedPairsPool[blockchain.name][protocol.code]
+          });
+
+          // Adding unique pairs traded by blockchain and protocol.
+          const pairAddresses: Array<string> = pairsElements.map(
+            (pairElement: PairElement) => pairElement.pairAddress
+          );
+          for (const pairAddress of pairAddresses) {
+            uniquePairsPool[blockchain.name][protocol.code].add(pairAddress);
+          }
+
+          const pairsElmByProtocol: PairsElmByProtocol = {} as PairsElmByProtocol;
+          pairsElmByProtocol[protocol.code] = pairsElements;
+          pairsElmByChain[blockchain.name] = pairsElmByProtocol;
         }
-
-        const pairsElmByProtocol: PairsElmByProtocol = {} as PairsElmByProtocol;
-        pairsElmByProtocol[protocol.code] = pairsElements;
-        pairsElmByChain[blockchain.name] = pairsElmByProtocol;
       }
 
       //Count pairs repetitions and sort them by repetition count.
