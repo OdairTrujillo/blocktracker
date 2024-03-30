@@ -11,9 +11,10 @@ import { PairsByChain, PairsByProtocol } from 'libchainstream';
 import { TradesCountByChain, PairsElmByChain } from 'libchainstream';
 import { UniqAddrsByChain, Chain } from 'libchainstream';
 import { Config, logger, saveObject, readObject, Protocol } from 'libchainstream';
+import { Pairs, Oracle } from 'oracle';
+
 import { getTradedPairs } from './transactions.js';
 import { toTradesCount, sortTradesCount } from './utils.js';
-import { Pairs, Oracle } from 'oracle';
 import { fullBackendSelectors } from './index.js';
 
 type OraclesByChain = { [key in Chain]: Array<Oracle> };
