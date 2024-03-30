@@ -6,8 +6,10 @@ import { UniqAddrsByChain } from 'libchainstream';
 import { Config, logger, saveObject, readObject, Protocol } from 'libchainstream';
 import { getTradedPairs } from './transactions.js';
 import { toTradesCount, sortTradesCount } from './utils.js';
-import { Pairs } from 'oracle';
+import { Oracle, Pairs } from 'oracle';
 import { fullBackendSelectors } from './index.js';
+
+// TODO: instance oracles with factory.on and Oracle.syncPoolsFeeds().
 
 // Objects tu be used with the API controllers
 export const uniquePairsPool: UniqAddrsByChain = {} as UniqAddrsByChain;
