@@ -9,7 +9,7 @@ import { PairReserves, Reserves } from 'libchainstream';
 import { Price01, PairReservesElement } from 'libchainstream';
 import { Config, PairsPriceData } from 'libchainstream';
 import { Liquidity } from 'oracle';
-import { liquidityCalc, priceCalc } from 'libchainstream';
+import { liquidityCalc, priceCalc, toPriceUsd } from 'libchainstream';
 import { archiveBackendSelectors } from './index.js';
 
 import { WBNB, USDT, WBNB_USDT } from 'libchainstream';
@@ -157,17 +157,14 @@ async function calcHotData(
         Number(item.token0Decimals),
         Number(item.token1Decimals)
       );
-      const price: number =
-        item.token0Address === WBNB || item.token0Address === USDT
-          ? price01.price1
-          : price01.price0;
 
-      const tokenPriceUsd: number =
-        item.pairAddress !== WBNB_USDT
-          ? item.token0Address === WBNB || item.token1Address === WBNB
-            ? price * WBNB_PRICE
-            : price
-          : price;
+      const tokenPriceUsd: number = toPriceUsd(
+        item.pairAddress,
+        item.token0Address,
+        item.token1Address,
+        price01,
+        WBNB_PRICE
+      );
 
       const tokenSymbol: string =
         item.token0Address === WBNB || item.token0Address === USDT
