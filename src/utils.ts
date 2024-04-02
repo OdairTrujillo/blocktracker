@@ -94,7 +94,7 @@ async function calcHotData(
   // Adding BNB price in USD to calc prices based on USD.
   pairAddresses.push(WBNB_USDT);
 
-  const pairsReserves: Array<PairReserves> = await Liquidity.getReserves(
+  const pairsReserves: Array<PairReserves> = await Liquidity.callReserves(
     blockchain,
     protocol,
     pairAddresses,
