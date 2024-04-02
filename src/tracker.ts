@@ -96,11 +96,13 @@ export function trackTrades() {
             pairsAB: tradedPairsPool[blockchain.name][protocol.code]
           });
           // Eval tu enable recent trades pairs elements.
+          //TODO: Return enabledPairsElements;
           await evalPairsElements(blockchain, protocol, pairsElements, {
             withDbWrite: true
           });
 
           // Adding unique pairs traded by blockchain and protocol.
+          // TODO: map over enabledPairsElements
           const pairAddresses: Array<string> = pairsElements.map(
             (pairElement: PairElement) => pairElement.pairAddress
           );
