@@ -79,8 +79,10 @@ export function trackTrades() {
       }
     });
 
+    let elapsedIntervals: number = 0;
     // Store pairs that were fetched each time interval.
     setInterval(async () => {
+      elapsedIntervals++;
       // Call pairs elements from pairsAB.
       const pairsElmByChain: PairsElmByChain = {} as PairsElmByChain;
       // Loop to fill pairs elements by chain object.
@@ -102,6 +104,7 @@ export function trackTrades() {
           const pairAddresses: Array<string> = pairsElements.map(
             (pairElement: PairElement) => pairElement.pairAddress
           );
+
           for (const pairAddress of pairAddresses) {
             uniquePairsPool[blockchain.name][protocol.code].add(pairAddress);
           }
@@ -124,12 +127,9 @@ export function trackTrades() {
         tradedPairsPool[blockchain.name][protocol.code] = [];
       }
 
-      let elapsedIntervals: number = historyPool.length;
-
       // Removing the elder element of history pool
-      if (elapsedIntervals > blockchain.cacheCapacity) {
+      if (historyPool.length > blockchain.cacheCapacity) {
         historyPool.shift();
-        elapsedIntervals = historyPool.length;
       }
 
       // Safe flush for unique pairs if API calls did not flushed it.
@@ -137,6 +137,7 @@ export function trackTrades() {
         for (const protocol of protocols) {
           uniquePairsPool[blockchain.name][protocol.code].clear();
         }
+        elapsedIntervals = 0;
       }
 
       // Caching historyPool in case of program exit.
