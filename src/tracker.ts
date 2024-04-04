@@ -95,8 +95,9 @@ export function trackTrades() {
           const pairsElements: Array<PairElement> = oracle.poolsFeed.getPairsElements({
             pairsAB: tradedPairsPool[blockchain.name][protocol.code]
           });
+
           // Eval tu enable recent trades pairs elements.
-          const enabledPairElements: Array<PairElement> = await evalPairsElements(
+          const avalsPairsElements: Array<PairElement> = await evalPairsElements(
             blockchain,
             protocol,
             pairsElements,
@@ -105,8 +106,12 @@ export function trackTrades() {
             }
           );
 
+          const enabledPairsElements: Array<PairElement> = avalsPairsElements.filter(
+            (pairElement: PairElement) => pairElement.meta.enabled
+          );
+
           // Adding unique pairs traded by blockchain and protocol.
-          const pairAddresses: Array<string> = enabledPairElements.map(
+          const pairAddresses: Array<string> = enabledPairsElements.map(
             (pairElement: PairElement) => pairElement.pairAddress
           );
 
