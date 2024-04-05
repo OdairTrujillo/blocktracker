@@ -9,16 +9,13 @@ import {
 import { PairElement, UniqueAddrsByProtocol } from 'libchainstream';
 import { PairsByChain, PairsByProtocol } from 'libchainstream';
 import { TradesCountByChain, PairsElmByChain } from 'libchainstream';
-import { UniqAddrsByChain } from 'libchainstream';
 import { Config, logger, saveObject, readObject, Protocol } from 'libchainstream';
-import { Oracle, evalPairsElements } from 'oracle';
+import { Oracle } from 'oracle';
 
 import { getTradedPairs } from './transactions.js';
 import { toTradesCount, sortTradesCount } from './utils.js';
 import { oracles } from './index.js';
 
-// Objects tu be used with the API controllers
-export const uniquePairsPool: UniqAddrsByChain = {} as UniqAddrsByChain;
 // This array will store 24 hours of traded pairs.
 export const historyPool: Array<TradesCountByChain> = readObject('historypool.json', []);
 // Oracle to query pair elements and reserves, also to sync by pair created.
@@ -42,8 +39,6 @@ export function trackTrades() {
       initUniquePairAddr[protocol.code] = new Set();
       tradedPairsPool[blockchain.name][protocol.code] = [];
     }
-
-    uniquePairsPool[blockchain.name] = initUniquePairAddr;
 
     const backendSelector: Generator<number> = BackendSelector(
       'fullNode',
@@ -79,10 +74,8 @@ export function trackTrades() {
       }
     });
 
-    let elapsedIntervals: number = 0;
     // Store pairs that were fetched each time interval.
     setInterval(async () => {
-      elapsedIntervals++;
       // Call pairs elements from pairsAB.
       const pairsElmByChain: PairsElmByChain = {} as PairsElmByChain;
       // Loop to fill pairs elements by chain object.
@@ -92,33 +85,12 @@ export function trackTrades() {
         );
 
         if (oracle) {
+          // Queryng pairs elements using traded token0 and token1.
           const pairsElements: Array<PairElement> = oracle.poolsFeed.getPairsElements({
             pairsAB: tradedPairsPool[blockchain.name][protocol.code]
           });
 
-          // Eval tu enable recent trades pairs elements.
-          const avalsPairsElements: Array<PairElement> = await evalPairsElements(
-            blockchain,
-            protocol,
-            pairsElements,
-            {
-              withDbWrite: true
-            }
-          );
-
-          const enabledPairsElements: Array<PairElement> = avalsPairsElements.filter(
-            (pairElement: PairElement) => pairElement.meta.enabled
-          );
-
-          // Adding unique pairs traded by blockchain and protocol.
-          const pairAddresses: Array<string> = enabledPairsElements.map(
-            (pairElement: PairElement) => pairElement.pairAddress
-          );
-
-          for (const pairAddress of pairAddresses) {
-            uniquePairsPool[blockchain.name][protocol.code].add(pairAddress);
-          }
-
+          // Filling pairs elements by chain.
           const pairsElmByProtocol: PairsElmByProtocol = {} as PairsElmByProtocol;
           pairsElmByProtocol[protocol.code] = pairsElements;
           pairsElmByChain[blockchain.name] = pairsElmByProtocol;
@@ -140,14 +112,6 @@ export function trackTrades() {
       // Removing the elder element of history pool
       if (historyPool.length > blockchain.cacheCapacity) {
         historyPool.shift();
-      }
-
-      // Safe flush for unique pairs if API calls did not flushed it.
-      if (elapsedIntervals > Config.cacheSafeFlush) {
-        for (const protocol of protocols) {
-          uniquePairsPool[blockchain.name][protocol.code].clear();
-        }
-        elapsedIntervals = 0;
       }
 
       // Caching historyPool in case of program exit.
