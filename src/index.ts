@@ -50,5 +50,9 @@ apiServer.listen(port, Number(hostname), () => {
 });
 
 // Calling track events.
-trackCreatedPairs();
-trackTrades();
+if (process.env.TRACK_CREATED_PAIRS === 'true') {
+  trackCreatedPairs();
+}
+if (process.env.TRACK_TRADES === 'true') {
+  trackTrades();
+}
