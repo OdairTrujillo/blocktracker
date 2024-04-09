@@ -75,7 +75,7 @@ export async function getTradedPairs(
         return await parseWithAttempts(attempts - 1, backendSelector.next().value);
       } else {
         logger.error(`${ethError.shortMessage ?? ethError.message}. ${ethError.code}.`, {
-          module: 'Liquidity'
+          module: 'Transactions'
         });
         throw new CustomError({
           name: 'TRANSACTIONS_ERROR',

@@ -10,7 +10,7 @@ import { Price01, PairReservesElement } from 'libchainstream';
 import { Config, PairsPriceData } from 'libchainstream';
 import { Liquidity } from 'oracle';
 import { liquidityCalc, priceCalc, toPriceUsd } from 'libchainstream';
-import { archiveBackendSelectors } from './index.js';
+import { fullBackendSelectors } from './index.js';
 
 import { WBNB, USDT, WBNB_USDT } from 'libchainstream';
 
@@ -37,8 +37,7 @@ export async function toTradesCount(
       const pricesData: PairsPriceData = await calcHotData(
         pairsElements,
         blockchain,
-        protocols[0], // TODO: Modify calcHotData to work with all protocols.
-        'latest'
+        protocols[0] // TODO: Modify calcHotData to work with all protocols.
       );
 
       for (const pairAddress in pricesData) {
@@ -84,8 +83,7 @@ export function sortTradesCount(
 async function calcHotData(
   pairsElements: Array<PairElement>,
   blockchain: Blockchain,
-  protocol: Protocol,
-  blockTag: string | number
+  protocol: Protocol
 ): Promise<PairsPriceData> {
   const pairAddresses: Array<string> = pairsElements.map(
     (pairElement: PairElement) => pairElement.pairAddress
@@ -99,9 +97,8 @@ async function calcHotData(
     protocol,
     pairAddresses,
     {
-      blockTag: blockTag,
-      attempts: 2,
-      backendSelector: archiveBackendSelectors[blockchain.name]
+      nodeType: 'fullNode',
+      backendSelector: fullBackendSelectors[blockchain.name]
     }
   );
 
