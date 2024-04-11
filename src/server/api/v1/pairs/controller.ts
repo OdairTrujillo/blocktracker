@@ -33,6 +33,7 @@ export async function traded(req: Request, res: Response, next: NextFunction) {
                     pairsCountByChain[chain][pairAddress].liquidityUsd;
                 } else {
                   accumulator[chain][pairAddress] = {
+                    tokenAddress: pairsCountByChain[chain][pairAddress].tokenAddress,
                     tokenSymbol: pairsCountByChain[chain][pairAddress].tokenSymbol,
                     trades: pairsCountByChain[chain][pairAddress].trades,
                     protocolCode: pairsCountByChain[chain][pairAddress].protocolCode,

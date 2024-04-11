@@ -12,7 +12,7 @@ import { Liquidity } from 'oracle';
 import { liquidityCalc, priceCalc, toPriceUsd } from 'libchainstream';
 import { fullBackendSelectors } from './index.js';
 
-import { WBNB, USDT, WBNB_USDT } from 'libchainstream';
+import { CHAINCOIN, CHAINCOIN_PAIR, STABLES } from 'libchainstream';
 
 export async function toTradesCount(
   pairsElmByProto: PairsElmByProtocol
@@ -44,6 +44,7 @@ export async function toTradesCount(
         frequencyMap[pairAddress] =
           frequencyMap[pairAddress] === undefined
             ? {
+                tokenAddress: pricesData[pairAddress].tokenAddress,
                 tokenSymbol: pricesData[pairAddress].tokenSymbol,
                 trades: 1,
                 protocolCode: protocolCode,
@@ -51,6 +52,7 @@ export async function toTradesCount(
                 liquidityUsd: pricesData[pairAddress].liquidityUsd
               }
             : {
+                tokenAddress: pricesData[pairAddress].tokenAddress,
                 tokenSymbol: pricesData[pairAddress].tokenSymbol,
                 trades: frequencyMap[pairAddress].trades + 1,
                 protocolCode: protocolCode,
@@ -90,7 +92,7 @@ async function calcHotData(
   );
 
   // Adding BNB price in USD to calc prices based on USD.
-  pairAddresses.push(WBNB_USDT);
+  pairAddresses.push(CHAINCOIN_PAIR[blockchain.name]);
 
   const pairsReserves: Array<PairReserves> = await Liquidity.callReserves(
     blockchain,
@@ -103,14 +105,14 @@ async function calcHotData(
   );
 
   // Getting WBNB price in USD.
-  const WBNB_PRICE: number = await (async () => {
+  const chainCoinPrice: number = await (async () => {
     const reserves: Reserves = {
       reserve0: pairsReserves.slice(-1)[0].reserve0,
       reserve1: pairsReserves.slice(-1)[0].reserve1,
       blockTimestamp: pairsReserves.slice(-1)[0].blockTimestamp
     };
 
-    const price01: Price01 = priceCalc(reserves, WBNB_USDT, 18, 18);
+    const price01: Price01 = priceCalc(reserves, CHAINCOIN_PAIR[blockchain.name], 18, 18);
 
     return price01.price1;
   })();
@@ -156,30 +158,40 @@ async function calcHotData(
       );
 
       const tokenPriceUsd: number = toPriceUsd(
+        blockchain.name,
         item.pairAddress,
         item.token0Address,
         item.token1Address,
         price01,
-        WBNB_PRICE
+        chainCoinPrice
       );
 
+      // TODO: Generalize all this code for all blockchains, WBNB = ChainCoin
       const tokenSymbol: string =
-        item.token0Address === WBNB || item.token0Address === USDT
+        item.token0Address === CHAINCOIN[blockchain.name] ||
+        STABLES[blockchain.name].includes(item.token0Address)
           ? item.token1Symbol
           : item.token0Symbol;
 
-      // TODO: Fix this for all blockchains
+      const tokenAddress: string =
+        item.token0Address === CHAINCOIN[blockchain.name] ||
+        STABLES[blockchain.name].includes(item.token0Address)
+          ? item.token1Address
+          : item.token0Address;
+
       const liquidityUsd: number = liquidityCalc(
+        blockchain.name,
         reserves,
         item.token0Address,
         item.token1Address,
         Number(item.token0Decimals),
         Number(item.token1Decimals),
         tokenPriceUsd,
-        WBNB_PRICE
+        chainCoinPrice
       );
 
       accumulator[item.pairAddress] = {
+        tokenAddress: tokenAddress,
         tokenSymbol: tokenSymbol,
         priceUsd: tokenPriceUsd,
         liquidityUsd: liquidityUsd
