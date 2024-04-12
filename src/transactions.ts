@@ -150,10 +150,40 @@ function pairABfromSingleCall(parsedTx: TransactionDescription): PairAB | null {
   // Router v2 swaps
   if (/^swap.+/.test(parsedTx.name)) {
     if (parsedTx.args.path && parsedTx.args.path.length > 1) {
-      return {
+      const pairAB: PairAB = {
         tokenA: String(parsedTx.args.path[0]),
-        tokenB: String(parsedTx.args.path[1])
+        tokenB: String(parsedTx.args.path.slice(-1)[0])
       };
+      let detail;
+      switch (parsedTx.name) {
+	case 'swapExactTokensForTokens':
+	case 'swapExactTokensForTokensSupportingFeeOnTransferTokens':
+	  // Venta
+	  detail = { amountIn: parsedTx.args[0], amountOutMin: parsedTx.args.slice(-1)[0] };
+	  break;
+	case 'swapTokensForExactTokens':
+	  // Compra
+	  detail = { amountInMax: parsedTx.args.slice(-1)[0], amountOut: parsedTx.args[0] };
+	  break;
+	case 'swapExactETHForTokens':
+	case 'swapExactETHForTokensSupportingFeeOnTransferTokens':
+	  // Compra
+	  detail = { amountOutMin: parsedTx.args.slice(-1)[0] }
+	  break;
+	case 'swapTokensForExactETH':
+	  // Venta
+	  detail = { amountInMax: parsedTx.args.slice(-1)[0], amountOut: parsedTx.args[0] }
+	  break;
+	case 'swapExactTokensForETH':
+	case 'swapExactTokensForETHSupportingFeeOnTransferTokens':
+	  // Venta
+	  detail = { amountIn: parsedTx.args[0], amountOutMin: parsedTx.args.slice(-1)[0] }
+	  break;
+	case 'swapETHForExactTokens':
+	  // Venta
+	  detail = { amountOut: parsedTx.args[0] }
+	  break;
+      }
     }
   }
   // Router v3 single swaps
