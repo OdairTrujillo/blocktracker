@@ -1,74 +1,56 @@
-import { Contract } from 'ethers';
-import {
-  CustomRpcProvider,
-  BackendSelector,
-  PairsElmByProtocol,
-  FACTORY_ADDRESS,
-  FACTORY_ABI
-} from 'libchainstream';
-import { PairElement, UniqueAddrsByProtocol } from 'libchainstream';
-import { PairsByChain, PairsByProtocol } from 'libchainstream';
-import { TradesCountByChain, PairsElmByChain } from 'libchainstream';
+import { CustomRpcProvider, BackendSelector } from 'libchainstream';
 import { Config, logger, saveObject, readObject, Protocol } from 'libchainstream';
-import { Oracle } from 'oracle';
+import { Trade, TradesByChain } from 'libchainstream';
 
-import { getTradedPairs } from './transactions.js';
-import { toTradesCount, sortTradesCount } from './utils.js';
-import { oracles } from './index.js';
+import { getBlockTrades } from './transactions.js';
 
 // This array will store 24 hours of traded pairs.
-export const historyPool: Array<TradesCountByChain> = readObject('historypool.json', []);
-// Oracle to query pair elements and reserves, also to sync by pair created.
+export const tradesHistory: TradesByChain = {} as TradesByChain;
 
 export function trackTrades() {
-  const tradedPairsPool: PairsByChain = {} as PairsByChain;
-  const tradesCountByChain: TradesCountByChain = {} as TradesCountByChain;
-  // Init objects
-  const initUniquePairAddr: UniqueAddrsByProtocol = {} as UniqueAddrsByProtocol;
-  // Register event for new blocks for each unique blockchain provider.
-
   for (const blockchain of Config.blockchains) {
+    // Read heach blockchain history file.
+    tradesHistory[blockchain.name] =
+      readObject(`${blockchain.name.toLowerCase()}trades.json`, []);
+
     const protocols: Array<Protocol> = Config.protocols.filter(
       (protocol: Protocol) => protocol.chain === blockchain.name
     );
-    // Init objects with empty sets for each blockchain
 
-    tradedPairsPool[blockchain.name] = {} as PairsByProtocol;
-
-    for (const protocol of protocols) {
-      initUniquePairAddr[protocol.code] = new Set();
-      tradedPairsPool[blockchain.name][protocol.code] = [];
-    }
+    // FIXME: Remove this protocol code.
+    const v3: Protocol = { code: 'PCAKESWAP_V3' } as Protocol;
+    protocols.push(v3);
 
     const backendSelector: Generator<number> = BackendSelector(
       'fullNode',
       blockchain.name
     );
+
     const provider: CustomRpcProvider = new CustomRpcProvider(
       'regularNode',
       blockchain.name
     );
 
+    // To store trades for each blokchain.
+    let tradesByInterval: Array<Trade> = [];
+
+    // Register event for new blocks for each unique blockchain provider.
     provider.on('block', async (blockNumber: number) => {
       if (blockNumber % 3 === 0) {
-        const tradedPairsAB: PairsByProtocol | null = await getTradedPairs(
+        const blockTrades: Array<Trade> | null = await getBlockTrades(
           blockchain,
-          blockNumber,
+          blockNumber - 1,
           { backendSelector: backendSelector }
         );
+
         // Process pairs if there were protocols traded.
-        if (tradedPairsAB && Object.keys(tradedPairsAB).length > 0) {
-          for (const protocol of protocols) {
-            // Ading pairs traded for each protocol.
-            tradedPairsPool[blockchain.name][protocol.code].push(
-              ...tradedPairsAB[protocol.code]
-            );
-          }
+        if (blockTrades !== null) {
+	    tradesByInterval.push(...blockTrades)
         } else {
           logger.warn(
             `Trades for block ${blockNumber} could not be fetched. ` +
               `Continuing from the next block.`,
-            { module: 'BlockTracker' }
+            { module: 'Tracker' }
           );
         }
       }
@@ -76,91 +58,23 @@ export function trackTrades() {
 
     // Store pairs that were fetched each time interval.
     setInterval(async () => {
-      // Call pairs elements from pairsAB.
-      const pairsElmByChain: PairsElmByChain = {} as PairsElmByChain;
-      // Loop to fill pairs elements by chain object.
-      for (const protocol of protocols) {
-        const oracle: Oracle | undefined = oracles[blockchain.name].find(
-          (oracle: Oracle) => oracle.protocol.code === protocol.code
-        );
-
-        if (oracle) {
-          // Queryng pairs elements using traded token0 and token1.
-          const pairsElements: Array<PairElement> = oracle.poolsFeed.getPairsElements({
-            pairsAB: tradedPairsPool[blockchain.name][protocol.code]
-          });
-
-          // Filling pairs elements by chain.
-          const pairsElmByProtocol: PairsElmByProtocol = {} as PairsElmByProtocol;
-          pairsElmByProtocol[protocol.code] = pairsElements;
-          pairsElmByChain[blockchain.name] = pairsElmByProtocol;
-        }
-      }
-
-      //Count pairs repetitions and sort them by repetition count.
-      tradesCountByChain[blockchain.name] = sortTradesCount(
-        await toTradesCount(pairsElmByChain[blockchain.name])
-      );
-
       // Add one interval of data.
-      historyPool.push(structuredClone(tradesCountByChain));
-      // Flush recent recieved pairs.
-      for (const protocol of protocols) {
-        tradedPairsPool[blockchain.name][protocol.code] = [];
-      }
+      tradesHistory[blockchain.name].push(structuredClone(tradesByInterval));
+
+      // Flush to star over with fresh traded pools per interval.
+      tradesByInterval = [];
 
       // Removing the elder element of history pool
-      if (historyPool.length > blockchain.cacheCapacity) {
-        historyPool.shift();
+      if (tradesHistory[blockchain.name].length > blockchain.cacheCapacity) {
+        tradesHistory[blockchain.name].shift();
       }
 
       // Caching historyPool in case of program exit.
-      saveObject(historyPool, 'historypool.json');
+      saveObject(
+	tradesHistory[blockchain.name],
+	`${blockchain.name.toLowerCase()}trades.json`
+      );
     }, blockchain.cacheInterval * 1000);
   }
 }
 
-export async function trackCreatedPairs() {
-  for (const blockchain of Config.blockchains) {
-    // Getting protocols available.
-    const protocols: Array<Protocol> = Config.protocols.filter(
-      (protocol: Protocol) => protocol.chain === blockchain.name
-    );
-    // Registering events on each protocol.
-    for (const protocol of protocols) {
-      const oracle: Oracle | undefined = oracles[blockchain.name].find(
-        (oracle: Oracle) => oracle.protocol.code === protocol.code
-      );
-      if (oracle) {
-        const provider: CustomRpcProvider = new CustomRpcProvider(
-          'regularNode',
-          blockchain.name
-        );
-
-        // TODO: make it for v3.
-        const factoryContract: Contract = new Contract(
-          FACTORY_ADDRESS['PCAKESWAP_V2'],
-          FACTORY_ABI['PCAKESWAP_V2'],
-          provider
-        );
-
-        // Register event pair created on factory
-        factoryContract.on(
-          'PairCreated',
-          async (_token0: string, _token1: string, _pair: string, _event: bigint) => {
-            if (oracle.isSyncingPairs === false) {
-              logger.info(`Syncing ${oracle.protocol.code} to last pair index ...`, {
-                module: 'BlockTracker'
-              });
-              await oracle.syncPoolsFeed();
-            } else {
-              logger.silly(`${oracle.protocol.code} is bussy syncing pairs.`, {
-                module: 'BlockTracker '
-              });
-            }
-          }
-        );
-      }
-    }
-  }
-}

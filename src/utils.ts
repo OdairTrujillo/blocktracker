@@ -1,81 +1,43 @@
-import {
-  TradesCount,
-  ProtocolCode,
-  TradesDetails,
-  PairsElmByProtocol
-} from 'libchainstream';
+import { AddressesCount } from 'libchainstream';
 import { PairElement, Blockchain, Protocol } from 'libchainstream';
 import { PairReserves, Reserves } from 'libchainstream';
 import { Price01, PairReservesElement } from 'libchainstream';
-import { Config, PairsPriceData } from 'libchainstream';
+import { PairsPriceData } from 'libchainstream';
 import { Liquidity } from 'oracle';
 import { liquidityCalc, priceCalc, toPriceUsd } from 'libchainstream';
 import { fullBackendSelectors } from './index.js';
 
 import { CHAINCOIN, CHAINCOIN_PAIR, STABLES } from 'libchainstream';
 
-export async function toTradesCount(
-  pairsElmByProto: PairsElmByProtocol
-): Promise<TradesCount> {
-  // Declare an empty object to fill it after.
-  const frequencyMap: TradesCount = {};
-
-  for (const key in pairsElmByProto) {
-    const protocolCode: ProtocolCode = key as ProtocolCode;
-
-    const pairsElements: Array<PairElement> = pairsElmByProto[protocolCode];
-
-    const blockchain: Blockchain | undefined = Config.blockchains.find(
-      (blockchain: Blockchain) => blockchain.name === 'BNBChain'
-    );
-
-    if (blockchain) {
-      const protocols: Array<Protocol> = Config.protocols.filter(
-        (protocol: Protocol) => protocol.chain === blockchain.name
-      );
-
-      const pricesData: PairsPriceData = await calcHotData(
-        pairsElements,
-        blockchain,
-        protocols[0] // TODO: Modify calcHotData to work with all protocols.
-      );
-
-      for (const pairAddress in pricesData) {
-        frequencyMap[pairAddress] =
-          frequencyMap[pairAddress] === undefined
-            ? {
-                tokenAddress: pricesData[pairAddress].tokenAddress,
-                tokenSymbol: pricesData[pairAddress].tokenSymbol,
-                trades: 1,
-                protocolCode: protocolCode,
-                priceUsd: pricesData[pairAddress].priceUsd,
-                liquidityUsd: pricesData[pairAddress].liquidityUsd
-              }
-            : {
-                tokenAddress: pricesData[pairAddress].tokenAddress,
-                tokenSymbol: pricesData[pairAddress].tokenSymbol,
-                trades: frequencyMap[pairAddress].trades + 1,
-                protocolCode: protocolCode,
-                priceUsd: pricesData[pairAddress].priceUsd,
-                liquidityUsd: pricesData[pairAddress].liquidityUsd
-              };
-      }
-    }
+export function toAddrsCount(
+  pairAddresses: Array<string>,
+  options: {
+    sorted: boolean;
   }
-  return frequencyMap;
+): AddressesCount {
+  const frequencyMap: AddressesCount = {};
+  /*
+    Create the property and assign its value, if property value does not
+    exists assign it 0 and add 1. If property exists add 1 to its value.
+  */
+  for (const pairAddress of pairAddresses) {
+    frequencyMap[pairAddress] = (frequencyMap[pairAddress] || 0) + 1;
+  }
+
+  return options.sorted ? frequencyMap : sortAddressesCount(frequencyMap);
 }
 
-export function sortTradesCount(
-  tradesCount: TradesCount,
+export function sortAddressesCount(
+  addressesCount: AddressesCount,
   listLength?: number
-): TradesCount {
+): AddressesCount {
   // Converts the AddressesCount into a matrix with elements of [key, value]
-  const entries: Array<[string, TradesDetails]> = Object.entries(tradesCount);
+  const entries: Array<[string, number]> = Object.entries(addressesCount);
   /* Descendent sort, if the result of substracting values is positive
      shifts nextEntry with currentEntry. */
-  entries.sort((currentEntry, nextEntry) => nextEntry[1].trades - currentEntry[1].trades);
+  entries.sort((currentEntry, nextEntry) => nextEntry[1] - currentEntry[1]);
   // Converts the sorted matrix into an AddrssCount object.
-  const sortedAddrsCount: TradesCount = {};
+  const sortedAddrsCount: AddressesCount = {};
   for (const entry of listLength ? entries.slice(0, listLength) : entries) {
     sortedAddrsCount[entry[0]] = entry[1];
   }
