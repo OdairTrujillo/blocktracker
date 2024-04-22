@@ -50,38 +50,43 @@ export async function getBlockTrades(
       // Getting the entire block for the given blockNumber
       const block: Block | null = await provider.getBlock(blockNumber);
       if (!block) {
-        logger.error(`Block ${blockNumber} could not be fetched.`, {
-          module: 'Transactions'
-        });
+        logger.error(
+          `Block ${blockNumber} could not be fetched. ` +
+            `Backend: ${new URL(provider.url).hostname}.`,
+          { module: 'Transactions' }
+        );
         return null;
       }
       // Get receipts for all transactions.
       const receiptsPromises: Array<Promise<PerformTxReceipt | null>> =
-	block.transactions.map(async (txHash: string) => {
-            const req: PerformActionRequest = {
-	      method: 'getTransactionReceipt',
-	      hash: txHash
-	    };
+        block.transactions.map(async (txHash: string) => {
+          const req: PerformActionRequest = {
+            method: 'getTransactionReceipt',
+            hash: txHash
+          };
           return provider._perform(req);
         });
 
       // A null receipt means that transaction was not mined.
-      const receiptsWithNulls = await Promise.all(receiptsPromises);
+      const receiptsWithNulls: Array<PerformTxReceipt | null> =
+        await Promise.all(receiptsPromises);
 
       // Returning receipts (with typeguard to tell TS that will return not nulls).
       return receiptsWithNulls.filter(
-	(receipt: PerformTxReceipt | null): receipt is PerformTxReceipt =>
-	  receipt !== null
+        (receipt: PerformTxReceipt | null): receipt is PerformTxReceipt =>
+          receipt !== null
       );
     } catch (error) {
       const ethError: EthersError = error as EthersError;
       if (attempts > 1) {
         logger.warn(
-          `${ethError.code ?? 'UNHANDLED_ERROR'},` +
-            ` retrying to get transactions receipts for block ${blockNumber}`,
+          `${ethError.code ?? 'UNHANDLED_ERROR'}, ` +
+            `retrying to get transactions receipts for block ${blockNumber}. ` +
+            `Backend: ${new URL(provider.url).hostname}. ` +
+            `\nMessage: ${process.env.RISE_ERROR === 'true' ? ethError.shortMessage : ''}.`,
           { module: 'Transactions' }
         );
-        // TODO: Read this from a config file.
+
         await sleep(blockchain.sleep);
         return await callWithAttempts(attempts - 1, backendSelector.next().value);
       } else {
@@ -99,7 +104,7 @@ export async function getBlockTrades(
 
   // Store trades in a pair address.
   const trades: Array<Trade> = [];
-  
+
   // Call of the recursive function.
   const receipts: Array<PerformTxReceipt> | null = await callWithAttempts(
     attempts,
@@ -110,61 +115,65 @@ export async function getBlockTrades(
     for (const protocol of protocols) {
       const pairInterface: Interface = new Interface(PAIR_ABI[protocol.code]);
 
-      const routersReceipts: Array<PerformTxReceipt> =
-	receipts.filter((receipt: PerformTxReceipt) => {
+      const routersReceipts: Array<PerformTxReceipt> = receipts.filter(
+        (receipt: PerformTxReceipt) => {
           return ROUTERS_ADDRESSES[protocol.code].some(
-	    (routerAddress: string) =>
-	      routerAddress.toLowerCase() === receipt.to?.toLowerCase()
-	  );
-	});
+            (routerAddress: string) =>
+              routerAddress.toLowerCase() === receipt.to?.toLowerCase()
+          );
+        }
+      );
 
       // Decode logs for each receipt.
       for (const receipt of routersReceipts) {
         if (receipt.logs && receipt.logs.length > 0) {
-	  // Arrange decoded logs along with pairs addresses.
-	  const decodedLogs: DecodedLogs = receipt.logs.reduce(
-	    (acc: DecodedLogs, log: Log) => {
-	      const logDecoded: LogDescription | null = pairInterface.parseLog({
-		topics: Array.from(log.topics),
-		data: log.data
-	      });
-	      // Accumulate logs with Swap name, v2 and v3 matches this.
-	      if (logDecoded !== null && logDecoded.name === 'Swap') {
-		acc[log.address] = logDecoded
-	      }
-	      return acc;
-	    }, {} as DecodedLogs);
+          // Arrange decoded logs along with pairs addresses.
+          const decodedLogs: DecodedLogs = receipt.logs.reduce(
+            (acc: DecodedLogs, log: Log) => {
+              const logDecoded: LogDescription | null = pairInterface.parseLog({
+                topics: Array.from(log.topics),
+                data: log.data
+              });
+              // Accumulate logs with Swap name, v2 and v3 matches this.
+              if (logDecoded !== null && logDecoded.name === 'Swap') {
+                acc[log.address] = logDecoded;
+              }
+              return acc;
+            },
+            {} as DecodedLogs
+          );
 
-	  // Assemble the trade objects
-	  for (const pairAddress in decodedLogs) {
-	    const decodedLog: LogDescription = decodedLogs[pairAddress];
-	    const trade: Trade = protocol.code.slice(-2) === 'V2'
-	      ? {
-		  pairAddress: pairAddress,
-		  txHash: receipt.transactionHash,
-		  trader: receipt.from,
-		  protocolCode: protocol.code,
-		  router: decodedLog.args.sender,
-		  recipient: decodedLog.args.to,
-		  amount0In: decodedLog.args.amount0In,
-		  amount1In: decodedLog.args.amount1In,
-		  amount0Out: decodedLog.args.amount0Out,
-		  amount1Out: decodedLog.args.amount1Out,
-	        }
-	      : {
-		  pairAddress: pairAddress,
-		  txHash: receipt.transactionHash,
-		  trader: receipt.from,
-		  protocolCode: protocol.code,
-		  router: decodedLog.args.sender,
-		  recipient: decodedLog.args.recipient,
-		  amount0: decodedLog.args.amount0,
-		  amount1: decodedLog.args.amount1,
-	      }
+          // Assemble the trade objects
+          for (const pairAddress in decodedLogs) {
+            const decodedLog: LogDescription = decodedLogs[pairAddress];
+            const trade: Trade =
+              protocol.code.slice(-2) === 'V2'
+                ? {
+                    pairAddress: pairAddress,
+                    txHash: receipt.transactionHash,
+                    trader: receipt.from,
+                    protocolCode: protocol.code,
+                    router: decodedLog.args.sender,
+                    recipient: decodedLog.args.to,
+                    amount0In: decodedLog.args.amount0In,
+                    amount1In: decodedLog.args.amount1In,
+                    amount0Out: decodedLog.args.amount0Out,
+                    amount1Out: decodedLog.args.amount1Out
+                  }
+                : {
+                    pairAddress: pairAddress,
+                    txHash: receipt.transactionHash,
+                    trader: receipt.from,
+                    protocolCode: protocol.code,
+                    router: decodedLog.args.sender,
+                    recipient: decodedLog.args.recipient,
+                    amount0: decodedLog.args.amount0,
+                    amount1: decodedLog.args.amount1
+                  };
 
-	    trades.push(trade);
-	  }
-	}
+            trades.push(trade);
+          }
+        }
       }
     }
     return trades;

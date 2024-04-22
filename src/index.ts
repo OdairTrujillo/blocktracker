@@ -20,7 +20,6 @@ for (const blockchain of Config.blockchains) {
   );
 }
 
-// Calling track events.
 if (process.env.TRACK_TRADES === 'true') {
   trackTrades();
 }
