@@ -2,7 +2,7 @@ import { Block, EthersError, PerformActionRequest } from 'ethers';
 import { Log, LogDescription } from 'ethers';
 import { Interface } from 'ethers';
 
-import { CustomRpcProvider, BackendSelector } from 'libchainstream';
+import { CustomRpcProvider, BackendSelector, toChecksumAddress } from 'libchainstream';
 import { Blockchain, Protocol, PerformTxReceipt } from 'libchainstream';
 import { Config, logger, sleep, CustomError } from 'libchainstream';
 import { Trade, DecodedLogs } from 'libchainstream';
@@ -149,24 +149,24 @@ export async function getBlockTrades(
             const trade: Trade =
               protocol.code.slice(-2) === 'V2'
                 ? {
-                    pairAddress: pairAddress,
+                    pairAddress: toChecksumAddress(pairAddress),
                     txHash: receipt.transactionHash,
                     trader: receipt.from,
                     protocolCode: protocol.code,
-                    router: decodedLog.args.sender,
-                    recipient: decodedLog.args.to,
+                    router: toChecksumAddress(decodedLog.args.sender),
+                    recipient: toChecksumAddress(decodedLog.args.to),
                     amount0In: decodedLog.args.amount0In,
                     amount1In: decodedLog.args.amount1In,
                     amount0Out: decodedLog.args.amount0Out,
                     amount1Out: decodedLog.args.amount1Out
                   }
                 : {
-                    pairAddress: pairAddress,
+                    pairAddress: toChecksumAddress(pairAddress),
                     txHash: receipt.transactionHash,
                     trader: receipt.from,
                     protocolCode: protocol.code,
-                    router: decodedLog.args.sender,
-                    recipient: decodedLog.args.recipient,
+                    router: toChecksumAddress(decodedLog.args.sender),
+                    recipient: toChecksumAddress(decodedLog.args.recipient),
                     amount0: decodedLog.args.amount0,
                     amount1: decodedLog.args.amount1
                   };
