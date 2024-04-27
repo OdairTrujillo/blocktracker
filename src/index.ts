@@ -1,7 +1,7 @@
 export { tradesHistory } from './tracker.js';
 
-import { Config, BackendSelectorByChain } from 'libchainstream';
-import { BackendSelector } from 'libchainstream';
+import { Config, BackendSelectorByChain } from 'lib';
+import { BackendSelector } from 'lib';
 
 import { trackTrades } from './tracker.js';
 

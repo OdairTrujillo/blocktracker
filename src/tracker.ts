@@ -1,8 +1,8 @@
 import { EthersError } from 'ethers';
 
-import { CustomRpcProvider, BackendSelector } from 'libchainstream';
-import { Config, logger, saveObject, readObject, Protocol } from 'libchainstream';
-import { Trade, TradesByChain } from 'libchainstream';
+import { CustomRpcProvider, BackendSelector } from 'lib';
+import { Config, logger, saveObject, readObject, Protocol } from 'lib';
+import { Trade, TradesByChain } from 'lib';
 
 import { getBlockTrades } from './transactions.js';
 

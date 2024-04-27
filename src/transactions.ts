@@ -2,11 +2,11 @@ import { Block, EthersError, PerformActionRequest } from 'ethers';
 import { Log, LogDescription } from 'ethers';
 import { Interface } from 'ethers';
 
-import { CustomRpcProvider, BackendSelector, toChecksumAddress } from 'libchainstream';
-import { Blockchain, Protocol, PerformTxReceipt } from 'libchainstream';
-import { Config, logger, sleep, CustomError } from 'libchainstream';
-import { Trade, DecodedLogs } from 'libchainstream';
-import { ROUTERS_ADDRESSES, PAIR_ABI } from 'libchainstream';
+import { CustomRpcProvider, BackendSelector, toChecksumAddress } from 'lib';
+import { Blockchain, Protocol, PerformTxReceipt } from 'lib';
+import { Config, logger, sleep, CustomError } from 'lib';
+import { Trade, DecodedLogs } from 'lib';
+import { ROUTERS_ADDRESSES, PAIR_ABI } from 'lib';
 
 // Get the traded pairs whithin a block by protocol
 export async function getBlockTrades(
