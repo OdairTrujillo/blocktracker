@@ -25,6 +25,9 @@ export async function getBlockTrades(
   const v3: Protocol = { code: 'PCAKESWAP_V3' } as Protocol;
   protocols.push(v3);
 
+  // Will be overrited by block.timestamp.
+  let timestamp: number = Math.floor(Date.now());
+
   const attempts: number = options.attempts ?? blockchain.attempts;
   const backendSelector: Generator<number> =
     options.backendSelector ?? BackendSelector('fullNode', blockchain.name);
@@ -57,6 +60,8 @@ export async function getBlockTrades(
         );
         return null;
       }
+      // Overriding timestamp.
+      timestamp = block.timestamp;
       // Get receipts for all transactions.
       const receiptsPromises: Array<Promise<PerformTxReceipt | null>> =
         block.transactions.map(async (txHash: string) => {
@@ -146,16 +151,17 @@ export async function getBlockTrades(
           // Assemble the trade objects
           for (const pairAddress in decodedLogs) {
             const decodedLog: LogDescription = decodedLogs[pairAddress];
-	    // TODO: Calcular precio y amountTokens, amountUsd, incluir timestamp
-	    // ...
-	    // Usar toChecksumAddress(pairAddress) para encontrar el pairAddress.
-	    // hay que encontrar el oracle.
-	    // Identificar si es abc|xyz y obtener el relPairAddress
+            // TODO: Calcular precio y amountTokens, amountUsd, incluir timestamp
+            // ...
+            // Usar toChecksumAddress(pairAddress) para encontrar el pairAddress.
+            // hay que encontrar el oracle.
+            // Identificar si es abc|xyz y obtener el relPairAddress
             const trade: Trade =
               protocol.code.slice(-2) === 'V2'
                 ? {
                     pairAddress: toChecksumAddress(pairAddress),
                     txHash: receipt.transactionHash,
+                    timestamp: timestamp,
                     trader: receipt.from,
                     protocolCode: protocol.code,
                     router: toChecksumAddress(decodedLog.args.sender),
@@ -168,6 +174,7 @@ export async function getBlockTrades(
                 : {
                     pairAddress: toChecksumAddress(pairAddress),
                     txHash: receipt.transactionHash,
+                    timestamp: timestamp,
                     trader: receipt.from,
                     protocolCode: protocol.code,
                     router: toChecksumAddress(decodedLog.args.sender),
