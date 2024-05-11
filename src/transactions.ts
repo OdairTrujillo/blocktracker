@@ -146,6 +146,11 @@ export async function getBlockTrades(
           // Assemble the trade objects
           for (const pairAddress in decodedLogs) {
             const decodedLog: LogDescription = decodedLogs[pairAddress];
+	    // TODO: Calcular precio y amountTokens, amountUsd, incluir timestamp
+	    // ...
+	    // Usar toChecksumAddress(pairAddress) para encontrar el pairAddress.
+	    // hay que encontrar el oracle.
+	    // Identificar si es abc|xyz y obtener el relPairAddress
             const trade: Trade =
               protocol.code.slice(-2) === 'V2'
                 ? {
