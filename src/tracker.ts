@@ -52,8 +52,7 @@ export function trackTrades(): void {
     );
 
     // To store trades for each blokchain.
-    let tradesByInterval: Array<Trade> = [];
-    const tradesFinalByInterval: Array<TradeData> = [];
+    let tradesByInterval: Array<TradeData> = [];
     // Register event for new blocks for each unique blockchain provider.
     provider.on('block', async (blockNumber: number) => {
       if (blockNumber % 3 === 0) {
@@ -66,6 +65,7 @@ export function trackTrades(): void {
           const chainCoinPrice: number = getChainCoinPrice(blockchain);
           // Process pairs if there were protocols traded.
           if (blockTrades !== null) {
+            // Obtain all pairElements related with trades for all protocols
             const oraclesForThisChain: Array<ReadOnlyOracle> = oracles[blockchain.name];
             const pairElements: Array<PairElement> = [];
             for (const oracle of oraclesForThisChain) {
@@ -79,59 +79,35 @@ export function trackTrades(): void {
                 )
               );
             }
-
-            // AllPairAddress viene de los pairElement del oráculo pero no necsariamente son todos los pairAddress que vienen del bloque
+            // AllPairAddress viene de los pairElement del oráculo pero no necsariamente son todos los pairAddress que vienen del bloque.
             const allPairAddrs: Array<Address> = pairElements.map(
               (item: PairElement) => item.pairAddress
             );
+            // Solo trabajamos con los trades para los cuales tengamos los pairElements en la base de datos.
             const blockTradesFiltered: Array<Trade> = blockTrades.filter((trade: Trade) =>
               allPairAddrs.includes(trade.pairAddress)
             );
-            const sortedPairElements: Array<PairElement> = pairElements.sort((a, b) => {
-              if (a.pairAddress === null && b.pairAddress !== null) {
-                return 1;
-              }
-              if (a.pairAddress !== null && b.pairAddress === null) {
-                return -1;
-              }
-              if (a.pairAddress === null && b.pairAddress === null) {
-                return 0;
-              }
-              if (a.pairAddress < b.pairAddress) {
-                return -1;
-              } else if (a.pairAddress > b.pairAddress) {
-                return 1;
-              } else {
-                return 0;
-              }
-            });
-            const blockTradesSorted: Array<Trade> = blockTradesFiltered.sort((a, b) => {
-              if (a.pairAddress === null && b.pairAddress !== null) {
-                return 1;
-              }
-              if (a.pairAddress !== null && b.pairAddress === null) {
-                return -1;
-              }
-              if (a.pairAddress === null && b.pairAddress === null) {
-                return 0;
-              }
-              // Ambos tienen pairAddress no nulo, entonces comparamos normalmente
-              if (a.pairAddress < b.pairAddress) {
-                return -1;
-              } else if (a.pairAddress > b.pairAddress) {
-                return 1;
-              } else {
-                return 0;
-              }
-            });
 
-            let index: number = 0;
-            for (const pairElement of sortedPairElements) {
-              const trade: Trade = blockTradesSorted[index];
+            // Creo el siguiente objeto e interfaz, para en el siguiente ciclo for evitar el uso de un find, y ahorrar tiempos.
+            interface PairElmnts {
+              [key: Address]: PairElement;
+            }
+            const pairElementsObj: PairElmnts = pairElements.reduce(
+              (acc: PairElmnts, pairElement: PairElement) => {
+                acc[pairElement.pairAddress] = pairElement;
+                return acc;
+              },
+              {} as PairElmnts
+            );
+
+            for (const trade of blockTradesFiltered) {
+              const protocolCode: ProtocolCode = trade.protocolCode;
+              const pairElement: PairElement = pairElementsObj[trade.pairAddress];
               const token0Address: Address = pairElement.token0Address as Address;
               const token1Address: Address = pairElement.token1Address as Address;
               const token0Symbol: string = pairElement.token0Symbol as string;
               const token1Symbol: string = pairElement.token1Symbol as string;
+
               const amount0: bigint = trade.amount0
                 ? trade.amount0
                 : absBigInt((trade.amount0Out ?? 0n) - (trade.amount0In ?? 0n));
@@ -140,7 +116,6 @@ export function trackTrades(): void {
                 ? trade.amount1
                 : absBigInt((trade.amount1Out ?? 0n) - (trade.amount1In ?? 0n));
 
-              const protocolCode: ProtocolCode = trade.protocolCode;
               const amount0Tokens: number = toUnsafeFloat(
                 amount0,
                 Number(pairElement.token0Decimals)
@@ -191,11 +166,9 @@ export function trackTrades(): void {
                 priceUsd: price.value,
                 tradedAmountUsd: tradedAmountFloat * price.value
               };
-              tradesFinalByInterval.push(tradeDataUsd);
-              index++;
-            }
 
-            tradesByInterval.push(...blockTrades);
+              tradesByInterval.push(tradeDataUsd);
+            }
           } else {
             logger.warn(
               `Trades for block ${blockNumber} could not be fetched. ` +
@@ -219,8 +192,14 @@ export function trackTrades(): void {
     // Store pairs that were fetched each time interval.
     const historyInterval: NodeJS.Timeout = setInterval(async () => {
       try {
+        // Refresh pairElements for all oracles each interval
+        const oraclesForThisChain: Array<ReadOnlyOracle> = oracles[blockchain.name];
+        for (const oracle of oraclesForThisChain) {
+          await oracle.refreshPairElements();
+        }
+
         // Add one interval of data.
-        tradesHistory[blockchain.name].push(structuredClone(tradesFinalByInterval));
+        tradesHistory[blockchain.name].push(structuredClone(tradesByInterval));
 
         // Removing the elder element of history pool
         if (tradesHistory[blockchain.name].length > blockchain.cacheCapacity) {
