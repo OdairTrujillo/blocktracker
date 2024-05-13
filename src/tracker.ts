@@ -100,6 +100,11 @@ export function trackTrades(): void {
               {} as PairElmnts
             );
 
+            const backendSelector: Generator<number> = BackendSelector(
+              'regularNode',
+              blockchain.name
+            );
+
             for (const trade of blockTradesFiltered) {
               const protocolCode: ProtocolCode = trade.protocolCode;
               const pairElement: PairElement = pairElementsObj[trade.pairAddress];
