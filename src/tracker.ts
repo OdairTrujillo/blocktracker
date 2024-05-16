@@ -154,6 +154,41 @@ export function trackTrades(): void {
               const tradedAmountFloat: number =
                 price.side === 'price0' ? amount0Tokens : amount1Tokens;
 
+              const tokenA: Address =
+                price.side === 'price0' ? token0Address : token1Address;
+
+              const amountIn0: boolean = trade.amount0
+                ? trade.amount0 > 0
+                  ? true
+                  : false
+                : (trade.amount0In ?? 0n) > 0
+                  ? true
+                  : false;
+              const amountIn1: boolean = trade.amount1
+                ? trade.amount1 > 0
+                  ? true
+                  : false
+                : (trade.amount1In ?? 0n) > 0
+                  ? true
+                  : false;
+              let itsBuy: boolean = false;
+
+              if (tokenA === token0Address && amountIn0) {
+                itsBuy = false;
+              }
+
+              if (tokenA === token0Address && amountIn1) {
+                itsBuy = true;
+              }
+
+              if (tokenA === token1Address && amountIn1) {
+                itsBuy = false;
+              }
+
+              if (tokenA === token1Address && amountIn0) {
+                itsBuy = true;
+              }
+
               const tradeDataUsd: TradeData = {
                 protocolCode: trade.protocolCode,
                 pairAddress: trade.pairAddress,
@@ -161,7 +196,7 @@ export function trackTrades(): void {
                 router: trade.router,
                 trader: trade.trader,
                 recipient: trade.recipient,
-                tokenA: price.side === 'price0' ? token0Address : token1Address,
+                tokenA: tokenA,
                 tokenB: price.side === 'price0' ? token1Address : token0Address,
                 tokenASymbol: price.side === 'price0' ? token0Symbol : token1Symbol,
                 tokenBSymbol: price.side === 'price0' ? token1Symbol : token0Symbol,
@@ -169,7 +204,8 @@ export function trackTrades(): void {
                 amountA: price.side === 'price0' ? amount0Tokens : amount1Tokens,
                 amountB: price.side === 'price0' ? amount1Tokens : amount0Tokens,
                 priceUsd: price.value,
-                tradedAmountUsd: tradedAmountFloat * price.value
+                tradedAmountUsd: tradedAmountFloat * price.value,
+                itsBuy: itsBuy
               };
 
               tradesByInterval.push(tradeDataUsd);
