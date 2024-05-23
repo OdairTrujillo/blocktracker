@@ -1,15 +1,15 @@
 import { EthersError } from 'ethers';
 
-import { CustomRpcProvider, BackendSelector, TradeData, ProtocolCode } from 'lib';
+import { CustomRpcProvider, BackendSelector, ProtocolCode } from 'lib';
 import { Config, logger, saveObject, readObject, Protocol } from 'lib';
-import { Trade, TradesByChain, Price } from 'lib';
+import { RawTrade, Trade, TradesByChain, Price } from 'lib';
 import { Address, PairElement, absBigInt } from 'lib';
 
 import { ReadOnlyOracle } from 'oracle';
 import { toUnsafeFloat, toPrice, getChainCoinPrice } from 'oracle';
 
 import { getBlockTrades } from './transactions.js';
-import { oracles } from './index.js';
+import { oraclesByChain } from './index.js';
 // This array will store 24 hours of traded pairs.
 export const tradesHistory: TradesByChain = {} as TradesByChain;
 
@@ -52,52 +52,67 @@ export function trackTrades(): void {
     );
 
     // To store trades for each blokchain.
-    let tradesByInterval: Array<TradeData> = [];
+    let tradesByInterval: Array<Trade> = [];
     // Register event for new blocks for each unique blockchain provider.
     provider.on('block', async (blockNumber: number) => {
       if (blockNumber % 3 === 0) {
         try {
-          const blockTrades: Array<Trade> | null = await getBlockTrades(
+          const blockTrades: Array<RawTrade> | null = await getBlockTrades(
             blockchain,
             blockNumber - 1,
             { backendSelector: backendSelector }
           );
-          const chainCoinPrice: number = getChainCoinPrice(blockchain);
+
           // Process pairs if there were protocols traded.
           if (blockTrades !== null) {
-            // Obtain all pairElements related with trades for all protocols
-            const oraclesForThisChain: Array<ReadOnlyOracle> = oracles[blockchain.name];
-            const pairElements: Array<PairElement> = [];
-            for (const oracle of oraclesForThisChain) {
-              const pairAddresses: Array<Address> = blockTrades.map(
-                (trade: Trade) => trade.pairAddress
-              );
-              pairElements.push(
-                ...oracle.getPairElements(
-                  { pairAddresses: pairAddresses },
-                  { enabled: true }
-                )
-              );
-            }
-            // AllPairAddress viene de los pairElement del oráculo pero no necsariamente son todos los pairAddress que vienen del bloque.
-            const allPairAddrs: Array<Address> = pairElements.map(
-              (item: PairElement) => item.pairAddress
-            );
-            // Solo trabajamos con los trades para los cuales tengamos los pairElements en la base de datos.
-            const blockTradesFiltered: Array<Trade> = blockTrades.filter((trade: Trade) =>
-              allPairAddrs.includes(trade.pairAddress)
+            const chainCoinPrice: number = getChainCoinPrice(blockchain);
+            const oracles: Array<ReadOnlyOracle> = oraclesByChain[blockchain.name];
+            const matchPairElements: Array<PairElement> = [];
+
+            // Object to speedup oracle selection
+            type MappedOracles = { [key: string]: ReadOnlyOracle };
+            const oraclesObj: MappedOracles = oracles.reduce(
+              (acc: MappedOracles, oracle: ReadOnlyOracle) => {
+                acc[oracle.protocol.code] = oracle;
+                return acc;
+              },
+              {} as MappedOracles
             );
 
-            // Creo el siguiente objeto e interfaz, para en el siguiente ciclo for evitar el uso de un find, y ahorrar tiempos.
-            interface PairElmnts {
-              [key: Address]: PairElement;
+            // Get all pairElements related with trades for all protocols.
+            for (const oracle of oracles) {
+              // Getting pair addresses for all protocols that were traded.
+              const allPairAddrs: Array<Address> = blockTrades.map(
+                (trade: RawTrade) => trade.pairAddress
+              );
+
+              // Getting pairElements that match for current oracle.
+              const pairElements: Array<PairElement> = oracle.getPairElements(
+                { pairAddresses: allPairAddrs },
+                { enabled: true }
+              );
+
+              // Adding pair elements of the current oracle.
+              matchPairElements.push(...pairElements);
             }
-            const pairElementsObj: PairElmnts = pairElements.reduce(
-              (acc: PairElmnts, pairElement: PairElement) => {
+
+            const matchPairAddrs: Array<Address> = matchPairElements.map(
+              (item: PairElement) => item.pairAddress
+            );
+
+            // Finally get trades that has a matching pair address of available oracles.
+            const blockTradesFiltered: Array<RawTrade> = blockTrades.filter(
+              (trade: RawTrade) => matchPairAddrs.includes(trade.pairAddress)
+            );
+
+            // Object with key pairAddress and value pairElement to speed up selection.
+            type MappedPairs = { [key: Address]: PairElement };
+            const pairElementsObj: MappedPairs = matchPairElements.reduce(
+              (acc: MappedPairs, pairElement: PairElement) => {
                 acc[pairElement.pairAddress] = pairElement;
                 return acc;
               },
-              {} as PairElmnts
+              {} as MappedPairs
             );
 
             const backendSelector: Generator<number> = BackendSelector(
@@ -113,6 +128,7 @@ export function trackTrades(): void {
               const token0Symbol: string = pairElement.token0Symbol as string;
               const token1Symbol: string = pairElement.token1Symbol as string;
 
+              // Selecting respective amounts for v3 protocol or v2.
               const amount0: bigint = trade.amount0
                 ? trade.amount0
                 : absBigInt((trade.amount0Out ?? 0n) - (trade.amount0In ?? 0n));
@@ -121,26 +137,22 @@ export function trackTrades(): void {
                 ? trade.amount1
                 : absBigInt((trade.amount1Out ?? 0n) - (trade.amount1In ?? 0n));
 
-              const amount0Tokens: number = toUnsafeFloat(
+              // Convering amounts from bigint|decimals to float (loosing precition).
+              const amount0Float: number = toUnsafeFloat(
                 amount0,
                 Number(pairElement.token0Decimals)
               );
-              const amount1Tokens: number = toUnsafeFloat(
+              const amount1Float: number = toUnsafeFloat(
                 amount1,
                 Number(pairElement.token1Decimals)
               );
 
-              let relPairElement: PairElement | undefined = undefined;
+              // Get the related pair for any of both tokens in case of abc|xyz pairs.
+              const relPairElement: PairElement | undefined = !pairElement.meta.normal
+                ? oraclesObj[protocolCode].getRelPairElement(token0Address, token1Address)
+                : undefined;
 
-              const oracle: ReadOnlyOracle | undefined = oraclesForThisChain.find(
-                (oracle: ReadOnlyOracle) => oracle.protocol.code === protocolCode
-              );
-              // relPairElement will no overrided if oracle is undefined.
-              if (oracle !== undefined && pairElement.meta.normal === false) {
-                // Get the related pair for any of both tokens in case of abc|xyz pairs.
-                relPairElement = oracle.getRelPairElement(token0Address, token1Address);
-              }
-
+              // Calc price taking into account related pair element.
               const price: Price = await toPrice(
                 blockchain,
                 protocolCode,
@@ -151,45 +163,61 @@ export function trackTrades(): void {
                 { relPairElement: relPairElement, backendSelector: backendSelector }
               );
 
+              // Selecting right price and token by side.
               const tradedAmountFloat: number =
-                price.side === 'price0' ? amount0Tokens : amount1Tokens;
+                price.side === 'price0' ? amount0Float : amount1Float;
 
               const tokenA: Address =
                 price.side === 'price0' ? token0Address : token1Address;
 
-              const amountIn0: boolean = trade.amount0
-                ? trade.amount0 > 0
-                  ? true
-                  : false
-                : (trade.amount0In ?? 0n) > 0
-                  ? true
-                  : false;
-              const amountIn1: boolean = trade.amount1
-                ? trade.amount1 > 0
-                  ? true
-                  : false
-                : (trade.amount1In ?? 0n) > 0
-                  ? true
-                  : false;
-              let itsBuy: boolean = false;
+              /*
+		Determines where the amount come from, from token0 or from token1.
+		trade.amount0 could be negative for v3 protocol. 
+	      */
+              const amountIn0: boolean =
+                trade.amount0 !== undefined
+                  ? trade.amount0 > 0
+                    ? true
+                    : false
+                  : (trade.amount0In ?? 0n) > 0
+                    ? true
+                    : false;
 
+              const amountIn1: boolean =
+                trade.amount1 !== undefined
+                  ? trade.amount1 > 0
+                    ? true
+                    : false
+                  : (trade.amount1In ?? 0n) > 0
+                    ? true
+                    : false;
+
+              let isBuy: boolean = false;
+
+              /*
+		If tokenA is token0 and amountIn was also with token0 it means a sell,
+		on the contrary if the amountIn was with token1 it means a buy.
+	       */
               if (tokenA === token0Address && amountIn0) {
-                itsBuy = false;
+                isBuy = false;
               }
 
               if (tokenA === token0Address && amountIn1) {
-                itsBuy = true;
+                isBuy = true;
               }
-
+              /*
+		If tokenA is token1 and amountIn was also with token1 it means a sell,
+		on the contrary if the amountIn was with token0 it means a buy.
+	       */
               if (tokenA === token1Address && amountIn1) {
-                itsBuy = false;
+                isBuy = false;
               }
 
               if (tokenA === token1Address && amountIn0) {
-                itsBuy = true;
+                isBuy = true;
               }
 
-              const tradeDataUsd: TradeData = {
+              const tradeUsd: Trade = {
                 protocolCode: trade.protocolCode,
                 pairAddress: trade.pairAddress,
                 txHash: trade.txHash,
@@ -201,14 +229,14 @@ export function trackTrades(): void {
                 tokenASymbol: price.side === 'price0' ? token0Symbol : token1Symbol,
                 tokenBSymbol: price.side === 'price0' ? token1Symbol : token0Symbol,
                 timestamp: trade.timestamp,
-                amountA: price.side === 'price0' ? amount0Tokens : amount1Tokens,
-                amountB: price.side === 'price0' ? amount1Tokens : amount0Tokens,
+                amountA: price.side === 'price0' ? amount0Float : amount1Float,
+                amountB: price.side === 'price0' ? amount1Float : amount0Float,
                 priceUsd: price.value,
                 tradedAmountUsd: tradedAmountFloat * price.value,
-                itsBuy: itsBuy
+                isBuy: isBuy
               };
 
-              tradesByInterval.push(tradeDataUsd);
+              tradesByInterval.push(tradeUsd);
             }
           } else {
             logger.warn(
@@ -234,8 +262,8 @@ export function trackTrades(): void {
     const historyInterval: NodeJS.Timeout = setInterval(async () => {
       try {
         // Refresh pairElements for all oracles each interval
-        const oraclesForThisChain: Array<ReadOnlyOracle> = oracles[blockchain.name];
-        for (const oracle of oraclesForThisChain) {
+        const oracles: Array<ReadOnlyOracle> = oraclesByChain[blockchain.name];
+        for (const oracle of oracles) {
           await oracle.refreshPairElements();
         }
 

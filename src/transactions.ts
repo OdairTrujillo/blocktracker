@@ -5,7 +5,7 @@ import { Interface } from 'ethers';
 import { CustomRpcProvider, BackendSelector, toChecksumAddress } from 'lib';
 import { Blockchain, Protocol, PerformTxReceipt } from 'lib';
 import { Config, logger, sleep, CustomError } from 'lib';
-import { Trade, DecodedLogs } from 'lib';
+import { RawTrade, DecodedLogs } from 'lib';
 import { ROUTERS_ADDRESSES, PAIR_ABI } from 'lib';
 
 // Get the traded pairs whithin a block by protocol
@@ -16,7 +16,7 @@ export async function getBlockTrades(
     attempts?: number;
     backendSelector?: Generator<number>;
   } = {}
-): Promise<Array<Trade> | null> {
+): Promise<Array<RawTrade> | null> {
   const protocols: Array<Protocol> = Config.protocols.filter(
     (protocol: Protocol) => protocol.chain === blockchain.name
   );
@@ -108,7 +108,7 @@ export async function getBlockTrades(
   }
 
   // Store trades in a pair address.
-  const trades: Array<Trade> = [];
+  const trades: Array<RawTrade> = [];
 
   // Call of the recursive function.
   const receipts: Array<PerformTxReceipt> | null = await callWithAttempts(
@@ -156,7 +156,7 @@ export async function getBlockTrades(
             // Usar toChecksumAddress(pairAddress) para encontrar el pairAddress.
             // hay que encontrar el oracle.
             // Identificar si es abc|xyz y obtener el relPairAddress
-            const trade: Trade =
+            const trade: RawTrade =
               protocol.code.slice(-2) === 'V2'
                 ? {
                     pairAddress: toChecksumAddress(pairAddress),

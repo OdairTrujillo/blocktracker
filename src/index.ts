@@ -10,7 +10,7 @@ import './mods.js'; // Polyfill
 
 export const fullBackendSelectors: BackendSelectorByChain = {} as BackendSelectorByChain;
 
-export const oracles: ReadOnlyOraclesByChain = {} as ReadOnlyOraclesByChain;
+export const oraclesByChain: ReadOnlyOraclesByChain = {} as ReadOnlyOraclesByChain;
 
 // Instantiation of oracles from config.json
 logger.info(`Initializing oracles ...`, { module: 'Blocktracker' });
@@ -28,7 +28,7 @@ for (const blockchain of Config.blockchains) {
     }
   );
   // Resolve oracles promises for each chain.
-  oracles[blockchain.name] = await Promise.all(oraclePromises);
+  oraclesByChain[blockchain.name] = await Promise.all(oraclePromises);
 }
 // Filling backends selectors.
 for (const blockchain of Config.blockchains) {
