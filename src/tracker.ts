@@ -1,37 +1,23 @@
 import { EthersError } from 'ethers';
+import { format } from 'date-fns';
 
 import { CustomRpcProvider, BackendSelector, ProtocolCode } from 'lib';
-import { Config, logger, saveObject, readObject, Protocol } from 'lib';
+import { Config, logger, Protocol } from 'lib';
 import { RawTrade, Trade, TradesByChain, Price } from 'lib';
 import { Address, PairElement, absBigInt } from 'lib';
 
 import { ReadOnlyOracle } from 'oracle';
 import { toUnsafeFloat, toPrice, getChainCoinPrice } from 'oracle';
 
-import { getBlockTrades } from './transactions.js';
 import { oraclesByChain } from './index.js';
+import { getBlockTrades } from './transactions.js';
+import { addTrades } from './dbhandler.js';
 // This array will store 24 hours of traded pairs.
 export const tradesHistory: TradesByChain = {} as TradesByChain;
 
 export function trackTrades(): void {
   for (const blockchain of Config.blockchains) {
     logger.info(`Tracking trades for ${blockchain.name} ...`, { module: 'Tracker' });
-
-    // Read heach blockchain history file.
-    try {
-      tradesHistory[blockchain.name] = readObject(
-        `${blockchain.name.toLowerCase()}trades.json`,
-        []
-      );
-    } catch (error) {
-      const ethError: EthersError = error as EthersError;
-      logger.error(
-        `Failed reading file ${blockchain.name.toLowerCase()}trades.json. ` +
-          `${process.env.RISE_ERROR ? ethError.message : ''}`,
-        { module: 'Trakcer' }
-      );
-      continue;
-    }
 
     const protocols: Array<Protocol> = Config.protocols.filter(
       (protocol: Protocol) => protocol.chain === blockchain.name
@@ -50,6 +36,14 @@ export function trackTrades(): void {
       'regularNode',
       blockchain.name
     );
+
+    // Refresh pair elements to work with fresh data.
+    setInterval(async () => {
+        const oracles: Array<ReadOnlyOracle> = oraclesByChain[blockchain.name];
+        for (const oracle of oracles) {
+          await oracle.refreshPairElements();
+        }
+    }, blockchain.refreshInterval * 1000);
 
     // To store trades for each blokchain.
     let tradesByInterval: Array<Trade> = [];
@@ -253,49 +247,43 @@ export function trackTrades(): void {
             { module: 'Trakcer' }
           );
           provider.removeAllListeners();
-          clearInterval(historyInterval);
+          clearInterval(storeTradesInterval);
         }
       }
     });
 
     // Store pairs that were fetched each time interval.
-    const historyInterval: NodeJS.Timeout = setInterval(async () => {
+    const storeTradesInterval: NodeJS.Timeout = setInterval(async () => {
+      const currentDate: Date = new Date();
+      const tradesCollectionName: string = 'trades' + format(currentDate, 'ddMMyyyy');
+
       try {
-        // Refresh pairElements for all oracles each interval
-        const oracles: Array<ReadOnlyOracle> = oraclesByChain[blockchain.name];
-        for (const oracle of oracles) {
-          await oracle.refreshPairElements();
-        }
+	const result: Trade | null =
+	  await addTrades(blockchain.name, tradesCollectionName, tradesByInterval);
 
-        // Add one interval of data.
-        tradesHistory[blockchain.name].push(structuredClone(tradesByInterval));
-
-        // Removing the elder element of history pool
-        if (tradesHistory[blockchain.name].length > blockchain.cacheCapacity) {
-          tradesHistory[blockchain.name].shift();
-        }
-
-        // Caching history to be used by other modules.
-        saveObject(
-          tradesHistory[blockchain.name],
-          `${blockchain.name.toLowerCase()}trades.json`
-        );
-
-        logger.debug(
-          `${tradesByInterval.length} trades were stored for ${blockchain.name}.`,
-          { module: 'Tracker' }
-        );
-        // Flush to star over with fresh traded pools per interval.
-        tradesByInterval = [];
+	if (result !== null) {
+	  logger.debug(
+            `${tradesByInterval.length} trades were stored for ${blockchain.name}.`,
+            { module: 'Tracker' }
+	  );	  
+	} else {
+	  logger.warn(
+            `Could not store trades for ${blockchain.name} at ${tradesCollectionName}.`,
+            { module: 'Tracker' }
+	  );
+	}
+	
+	// Flush to star over with fresh traded pools per interval.
+	tradesByInterval = [];
       } catch (error) {
         const ethError: EthersError = error as EthersError;
         logger.error(
-          `Failed saving trades history for ${blockchain.name}. ` +
+          `Failed adding trades DB for blockchain ${blockchain.name}. ` +
             `${process.env.RISE_ERROR ? ethError.message : ''}`,
           { module: 'Trakcer' }
         );
         provider.removeAllListeners();
-        clearInterval(historyInterval);
+        clearInterval(storeTradesInterval);
       }
     }, blockchain.cacheInterval * 1000);
   }
