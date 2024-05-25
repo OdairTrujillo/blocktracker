@@ -11,14 +11,14 @@ const test: string = process.env.NODE_ENV === 'test' ? '_test' : '';
 export async function addTrades(
   chain: Chain,
   collectionName: string,
-  trades: Array<Trade>,
+  trades: Array<Trade>
 ): Promise<Trade | null> {
   const client: MongoClient = new MongoClient(mongoUri);
 
   try {
     await client.connect();
     const db: Db = client.db(chain + 'Trades' + test);
-    
+
     const collectionExists: boolean =
       (await db.listCollections({ name: collectionName }).toArray()).length > 0
         ? true
@@ -39,7 +39,7 @@ export async function addTrades(
         { blockTimestamp: 1 },
         {
           name: 'Time',
-          unique: true,
+          unique: false,
           collation: { locale: 'en', numericOrdering: true }
         }
       );
