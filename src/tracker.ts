@@ -255,7 +255,7 @@ export function trackTrades(): void {
     // Store pairs that were fetched each time interval.
     const storeTradesInterval: NodeJS.Timeout = setInterval(async () => {
       const currentDate: Date = new Date();
-      const tradesCollectionName: string = format(currentDate, 'yyyyMMdd') + 'Trades';
+      const tradesCollectionName: string = 'Trades' + format(currentDate, 'yyyyMMdd');
 
       try {
         const result: Trade | null = await addTrades(
