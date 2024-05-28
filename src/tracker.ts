@@ -281,8 +281,8 @@ export function trackTrades(): void {
       } catch (error) {
         const ethError: EthersError = error as EthersError;
         logger.error(
-          `Failed adding trades DB for blockchain ${blockchain.name}. ` +
-            `${process.env.RISE_ERROR ? ethError.message : ''}`,
+          `Failed adding trades to database for blockchain ${blockchain.name}. ` +
+            `${process.env.RISE_ERROR ? ethError : 'ethError.message'}`,
           { module: 'Trakcer' }
         );
         provider.removeAllListeners();
