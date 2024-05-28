@@ -4,7 +4,8 @@ import { Collection, InsertManyResult } from 'mongodb';
 import { Chain, Trade } from 'lib';
 import { CustomError, logger } from 'lib';
 
-const mongoUri: string = 'mongodb://localhost:27017';
+const serverHost: string = process.env.MONGO_HOST ?? 'localhost:27017';
+const mongoUri: string = `mongodb://${serverHost}`;
 // Setting the test string to switch db in test environmnet
 const test: string = process.env.NODE_ENV === 'test' ? '_test' : '';
 
