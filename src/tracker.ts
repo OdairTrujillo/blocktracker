@@ -157,7 +157,7 @@ export function trackTrades(): void {
                 { relPairElement: relPairElement, backendSelector: backendSelector }
               );
 
-              // Selecting right price and token by side.
+              // Selecting correct price and token by side.
               const tradedAmountFloat: number =
                 price.side === 'price0' ? amount0Float : amount1Float;
 
@@ -246,14 +246,12 @@ export function trackTrades(): void {
               `${process.env.RISE_ERROR ? ethError.message : ''}`,
             { module: 'Trakcer' }
           );
-          provider.removeAllListeners();
-          clearInterval(storeTradesInterval);
         }
       }
     });
 
     // Store pairs that were fetched each time interval.
-    const storeTradesInterval: NodeJS.Timeout = setInterval(async () => {
+    setInterval(async () => {
       const currentDate: Date = new Date();
       const tradesCollectionName: string = 'trades' + format(currentDate, 'yyyyMMdd');
 
@@ -285,8 +283,6 @@ export function trackTrades(): void {
             `${process.env.RISE_ERROR ? ethError : 'ethError.message'}`,
           { module: 'Trakcer' }
         );
-        provider.removeAllListeners();
-        clearInterval(storeTradesInterval);
       }
     }, blockchain.cacheInterval * 1000);
   }
