@@ -11,7 +11,7 @@ import { toUnsafeFloat, toPrice, getChainCoinPrice } from 'oracle';
 
 import { oraclesByChain } from './index.js';
 import { getBlockTrades } from './transactions.js';
-import { addTrades } from './dbhandler.js';
+import { DbHandler } from 'lib';
 // This array will store 24 hours of traded pairs.
 export const tradesHistory: TradesByChain = {} as TradesByChain;
 
@@ -59,7 +59,7 @@ export function trackTrades(): void {
 
           // Process pairs if there were protocols traded.
           if (blockTrades !== null) {
-            const chainCoinPrice: number = getChainCoinPrice(blockchain);
+            const chainCoinPrice: number = await getChainCoinPrice(blockchain);
             const oracles: Array<ReadOnlyOracle> = oraclesByChain[blockchain.name];
             const matchPairElements: Array<PairElement> = [];
 
@@ -258,7 +258,7 @@ export function trackTrades(): void {
       const tradesCollectionName: string = 'trades' + format(currentDate, 'yyyyMMdd');
 
       try {
-        const result: Trade | null = await addTrades(
+        const result: Trade | null = await DbHandler.addTrades(
           blockchain.name,
           tradesCollectionName,
           tradesByInterval
