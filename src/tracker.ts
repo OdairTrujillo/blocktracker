@@ -32,6 +32,11 @@ export function trackTrades(): void {
       blockchain.name
     );
 
+    const regBackendSelector: Generator<number> = BackendSelector(
+      'regularNode',
+      blockchain.name
+    );
+
     const provider: CustomRpcProvider = new CustomRpcProvider(
       'regularNode',
       blockchain.name
@@ -78,6 +83,12 @@ export function trackTrades(): void {
               // Getting pair addresses for all protocols that were traded.
               const allPairAddrs: Array<Address> = blockTrades.map(
                 (trade: RawTrade) => trade.pairAddress
+              );
+
+              // Evaluate traded pairs to enable or disable them.
+              await oracle.evalPairElements(
+                { pairAddresses: allPairAddrs },
+                { backendSelector: regBackendSelector }
               );
 
               // Getting pairElements that match for current oracle.
@@ -244,7 +255,7 @@ export function trackTrades(): void {
           logger.error(
             `Failed getting trades for ${blockchain.name}. ` +
               `${process.env.RISE_ERROR ? ethError.message : ''}`,
-            { module: 'Trakcer' }
+            { module: 'Tracker' }
           );
         }
       }
