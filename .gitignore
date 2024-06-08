@@ -6,6 +6,7 @@ public_html/charting_library/
 logs/
 package-lock.json
 tsconfig.tsbuildinfo
+.env
 *~
 \#*#
 .#*
