@@ -295,6 +295,6 @@ export function trackTrades(): void {
           { module: 'Trakcer' }
         );
       }
-    }, blockchain.cacheInterval * 1000);
+    }, Config.cacheInterval * 1000);
   }
 }
