@@ -2,7 +2,7 @@ export { tradesHistory } from './tracker.js';
 import { Protocol } from 'lib';
 import { Config, BackendSelectorByChain } from 'lib';
 import { BackendSelector, logger } from 'lib';
-import { ReadOnlyOracle, ReadOnlyOraclesByChain } from 'oracle';
+import { Oracle, OraclesByChain } from 'oracle';
 
 import { trackTrades } from './tracker.js';
 
@@ -10,7 +10,7 @@ import './mods.js'; // Polyfill
 
 export const fullBackendSelectors: BackendSelectorByChain = {} as BackendSelectorByChain;
 
-export const oraclesByChain: ReadOnlyOraclesByChain = {} as ReadOnlyOraclesByChain;
+export const oraclesByChain: OraclesByChain = {} as OraclesByChain;
 
 // Instantiation of oracles from config.json
 logger.info(`Initializing oracles ...`, { module: 'Blocktracker' });
@@ -19,11 +19,9 @@ for (const blockchain of Config.blockchains) {
     (protocol: Protocol) => protocol.chain === blockchain.name
   );
   // Preparing oracles promises.
-  const oraclePromises: Array<Promise<ReadOnlyOracle>> = protocols.map(
+  const oraclePromises: Array<Promise<Oracle>> = protocols.map(
     async (protocol: Protocol) => {
-      const pairs: object = { startIndex: 0 };
-      const oracle: ReadOnlyOracle = new ReadOnlyOracle(blockchain, protocol);
-      await oracle.init(pairs);
+      const oracle: Oracle = new Oracle(blockchain, protocol);
       return oracle;
     }
   );

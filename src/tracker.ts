@@ -5,8 +5,7 @@ import { CustomRpcProvider, BackendSelector, ProtocolCode } from 'lib';
 import { Config, logger, Protocol } from 'lib';
 import { RawTrade, Trade, TradesByChain, Price } from 'lib';
 import { Address, PairElement, absBigInt } from 'lib';
-
-import { ReadOnlyOracle } from 'oracle';
+import { Oracle } from 'oracle';
 import { toUnsafeFloat, toPrice, getChainCoinPrice } from 'oracle';
 
 import { oraclesByChain } from './index.js';
@@ -42,14 +41,6 @@ export function trackTrades(): void {
       blockchain.name
     );
 
-    // Refresh pair elements to work with fresh data.
-    setInterval(async () => {
-      const oracles: Array<ReadOnlyOracle> = oraclesByChain[blockchain.name];
-      for (const oracle of oracles) {
-        await oracle.refreshPairElements();
-      }
-    }, blockchain.refreshInterval * 1000);
-
     // To store trades for each blokchain.
     let tradesByInterval: Array<Trade> = [];
     // Register event for new blocks for each unique blockchain provider.
@@ -65,13 +56,13 @@ export function trackTrades(): void {
           // Process pairs if there were protocols traded.
           if (blockTrades !== null) {
             const chainCoinPrice: number = await getChainCoinPrice(blockchain);
-            const oracles: Array<ReadOnlyOracle> = oraclesByChain[blockchain.name];
+            const oracles: Array<Oracle> = oraclesByChain[blockchain.name];
             const matchPairElements: Array<PairElement> = [];
 
             // Object to speedup oracle selection
-            type MappedOracles = { [key: string]: ReadOnlyOracle };
+            type MappedOracles = { [key: string]: Oracle };
             const oraclesObj: MappedOracles = oracles.reduce(
-              (acc: MappedOracles, oracle: ReadOnlyOracle) => {
+              (acc: MappedOracles, oracle: Oracle) => {
                 acc[oracle.protocol.code] = oracle;
                 return acc;
               },
@@ -92,7 +83,7 @@ export function trackTrades(): void {
               );
 
               // Getting pairElements that match for current oracle.
-              const pairElements: Array<PairElement> = oracle.getPairElements(
+              const pairElements: Array<PairElement> = await oracle.getPairElements(
                 { pairAddresses: allPairAddrs },
                 { enabled: true }
               );
@@ -154,7 +145,7 @@ export function trackTrades(): void {
 
               // Get the related pair for any of both tokens in case of abc|xyz pairs.
               const relPairElement: PairElement | undefined = !pairElement.meta.normal
-                ? oraclesObj[protocolCode].getRelPairElement(token0Address, token1Address)
+                ? await oraclesObj[protocolCode].getRelPairElement(token0Address, token1Address)
                 : undefined;
 
               // Calc price taking into account related pair element.
