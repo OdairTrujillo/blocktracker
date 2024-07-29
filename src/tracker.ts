@@ -266,7 +266,7 @@ export function trackTrades(): void {
         const ethError: EthersError = error as EthersError;
         logger.error(
           `Failed calculating prices of raw trades for ${blockchain.name}. ` +
-            `${process.env.RISE_ERROR ? ethError : 'ethError.message'}`,
+            `${process.env.RISE_ERROR ? JSON.stringify(ethError) : ethError.message}`,
           { module: 'Tracker' }
         );
       }
