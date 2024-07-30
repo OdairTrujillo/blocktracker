@@ -47,6 +47,9 @@ export function trackTrades(): void {
     provider.on('block', async (blockNumber: number) => {
       if (blockNumber % 3 === 0 || process.env.ALL_BLOCKS === 'true') {
         try {
+          logger.silly(`Processing block ${blockNumber} on {blockchain.name}... `, {
+            module: 'Tracker'
+          });
           const blockTrades: Array<RawTrade> | null = await getBlockTrades(
             blockchain,
             blockNumber - 1,
