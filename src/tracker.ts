@@ -45,7 +45,7 @@ export function trackTrades(): void {
     let blocksTrades: Array<RawTrade> = [];
     // Register event for new blocks for each unique blockchain provider.
     provider.on('block', async (blockNumber: number) => {
-      if (blockNumber % 3 === 0) {
+      if (blockNumber % 3 === 0 || process.env.ALL_BLOCKS === 'true') {
         try {
           const blockTrades: Array<RawTrade> | null = await getBlockTrades(
             blockchain,
