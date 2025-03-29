@@ -1,19 +1,37 @@
-import { EthersError } from 'ethers';
+import { EthersError, TransactionReceipt } from 'ethers';
 import { format } from 'date-fns';
 
-import { CustomRpcProvider, BackendSelector, ProtocolCode } from 'lib';
-import { Config, logger, Protocol } from 'lib';
-import { RawTrade, Trade, TradesByChain, Price } from 'lib';
-import { Address, PairElement, absBigInt } from 'lib';
-import { Oracle } from 'oracle';
-import { toUnsafeFloat, toPrice, getChainCoinPrice } from 'oracle';
+import { CustomRpcProvider, BackendSelector } from 'core';
+import { Protocol, ProtocolCode  } from 'core';
+import { Address, Pool } from 'core';
+import { Config, logger, absBigInt } from 'core';
+import { Pools, MappedPools, callPools, addPools, callRelatedPool } from 'core';
 
-import { oraclesByChain } from './index.js';
-import { getBlockTrades } from './transactions.js';
-import { DbHandler } from 'lib';
+import { toUnsafeFloat, toPrice, getChainCoinPrice } from 'core';
+import { Price } from 'core';
+import { DbHandler } from 'core';
+
+import { RawTrade, Trade, TradesByChain } from './declarations.js';
+import { callTxsReceipts } from './calls/index.js';
+import { parseTxReceipts } from './utils/transactions.js';
+import { isTradeBuy } from './utils/trades.ts~';
+
 // This array will store 24 hours of traded pairs.
 export const tradesHistory: TradesByChain = {} as TradesByChain;
 
+/**
+ * Scan blocks for each available [[Blockchain]] in the config file and stores each
+ * [[Trade]] related to each [[Protocol]] supported in the config file.
+ *
+ * @returns {Promise<void>}
+ *
+ * @throws {CustomError} - Handled by nested functions [[callPool]] and [[callTxReceipts]].
+ *
+ * @description
+ * This function tracks all the trades of the supported protocols for each 
+ * blockchain supported in the config file. [[Trade]] objects are stored into
+ * database to be available to query them.
+ */
 export function trackTrades(): void {
   for (const blockchain of Config.blockchains) {
     logger.info(`Tracking trades for ${blockchain.name} ...`, { module: 'Tracker' });
@@ -22,228 +40,165 @@ export function trackTrades(): void {
       (protocol: Protocol) => protocol.chain === blockchain.name
     );
 
-    // FIXME: Remove this protocol code.
-    const v3: Protocol = { code: 'PCAKESWAP_V3' } as Protocol;
-    protocols.push(v3);
+    const provider: CustomRpcProvider = new CustomRpcProvider(
+      'fullNode',
+      blockchain.name
+    );
 
     const backendSelector: Generator<number> = BackendSelector(
       'fullNode',
       blockchain.name
     );
 
-    const regBackendSelector: Generator<number> = BackendSelector(
-      'regularNode',
-      blockchain.name
-    );
-
-    const provider: CustomRpcProvider = new CustomRpcProvider(
-      'regularNode',
-      blockchain.name
-    );
-
     // To store trades for each blokchain, will be flushed after stores succeed.
-    let blocksTrades: Array<RawTrade> = [];
-    // Register event for new blocks for each unique blockchain provider.
+    let blockTrades: Array<RawTrade> = [];
+    /**
+     * Register event for new blocks for each unique blockchain provider.
+     */
     provider.on('block', async (blockNumber: number) => {
-      if (blockNumber % 3 === 0 || process.env.ALL_BLOCKS === 'true') {
-        try {
-          logger.debug(`Processing block ${blockNumber} on ${blockchain.name}... `, {
-            module: 'Tracker'
-          });
-          const blockTrades: Array<RawTrade> | null = await getBlockTrades(
-            blockchain,
+      try {
+        logger.debug(
+	  `Processing block ${blockNumber} on ${blockchain.name}... `,
+	  { module: 'Tracker' }
+	);
+	const txsReceipts: Array<TransactionReceipt> | null = await callTxsReceipts(
+	    blockchain,
             blockNumber - 1,
-            { backendSelector: backendSelector }
-          );
-          // Push trades if there were protocols traded.
-          if (blockTrades !== null) {
-            blocksTrades.push(...blockTrades);
-          } else {
-            logger.warn(
-              `Trades for block ${blockNumber} could not be fetched. ` +
-                `Continuing from the next block.`,
-              { module: 'Tracker' }
-            );
-          }
-        } catch (error) {
-          const ethError: EthersError = error as EthersError;
-          logger.error(
-            `Failed getting trades for ${blockchain.name}. ` +
-              `${process.env.RISE_ERROR ? JSON.stringify(ethError) : ''}`,
+            { backendSelector: backendSelector }	      
+	);
+	if (txsReceipts !== null) {
+	  const currentTrades: Array<RawTrade> | null = await parseTxReceipts(
+            blockchain,
+	    txsReceipts
+          );  
+          blockTrades.push(...currentTrades);
+	}
+        // Send non succesfully blocks to a child process.
+        else {
+          logger.warn(
+            `Trades for block ${blockNumber} could not be processed. ` +
+              `TODO: Build a child process to proccess failed blocks.`,
             { module: 'Tracker' }
           );
         }
+      } catch (error) {
+        const ethError: EthersError = error as EthersError;
+        logger.error(
+          `Failed getting trades for ${blockchain.name}. ` +
+            `${process.env.RISE_ERROR ? JSON.stringify(ethError) : ''}`,
+          { module: 'Tracker' }
+        );
       }
     });
 
-    // Store pairs that were fetched each time interval.
+    /**
+     * Store processed pairs each time interval.
+     */
     setInterval(async () => {
+      // Call traded pools for current blockchain for each protocol.
+      const tradedPools: Array<Pool> = protocols.map(
+	async (protocol: Protocol) => {
+	  const poolsAddresses: Array<Address> = blockTrades.filter(
+	    async (rawTrade: RawTrade) => rawTrade.protocolCode === protocol.code
+	  );
+	  // Call pools with traded pool addresses.
+	  return await callPools(
+	    blockchain.name,
+	    poolsAddresses
+	  );
+	}
+      );
+     
+      // Map the pools using poolAddress as key.
+      const mappedPools: MappedPools = tradedPools.reduce(
+        (acc: MappedPools, pool: Pools) => {
+          acc[pool.poolAddress] = pool;
+          return acc;
+        },
+        {} as MappedPools
+      );
+      
+      // Store non-stored pools to query them in other modules.
+      const lastStoredPool: Pool | null = await addPools(blockchain.name, tradedPools);
+      const logMessage: string = lastStoredPool
+	? `Last stored pool: ${lastStoredPool.poolAddress}.`
+	: 'No pools have been stored.';
+      logger.silly(logMessage, { module: 'BlockTracker/trackTrades'});
+
+      /**
+       * Trades have to be processed using the full %%pool%% info, as traded pools are
+       * called before, it is useful to build a map between traded pools and the pair
+       * address of each trade.
+       */
       const tradesByInterval: Array<Trade> = [];
-      const currentDate: Date = new Date();
-      const tradesCollectionName: string = 'trades' + format(currentDate, 'yyyyMMdd');
+
 
       // USD calculations.
-      try {
-        const chainCoinPrice: number = await getChainCoinPrice(blockchain);
-        const oracles: Array<Oracle> = oraclesByChain[blockchain.name];
-        const matchPairElements: Array<PairElement> = [];
+      const chainCoinPrice: number = await getChainCoinPrice(blockchain);
 
-        // Object to speedup oracle selection
-        type MappedOracles = { [key: string]: Oracle };
-        const oraclesObj: MappedOracles = oracles.reduce(
-          (acc: MappedOracles, oracle: Oracle) => {
-            acc[oracle.protocol.code] = oracle;
-            return acc;
-          },
-          {} as MappedOracles
-        );
-
-        // Get all pairElements related with trades for all protocols.
-        for (const oracle of oracles) {
-          // Getting pair addresses for all protocols that were traded.
-          const allPairAddrs: Array<Address> = blocksTrades.map(
-            (trade: RawTrade) => trade.pairAddress
-          );
-
-          // Evaluate traded pairs to enable or disable them.
-          await oracle.evalPairElements(
-            { pairAddresses: allPairAddrs },
-            { backendSelector: regBackendSelector }
-          );
-
-          // Getting pairElements that match for current oracle.
-          const pairElements: Array<PairElement> = await oracle.getPairElements(
-            { pairAddresses: allPairAddrs },
-            { enabled: true }
-          );
-
-          // Adding pair elements of the current oracle.
-          matchPairElements.push(...pairElements);
-        }
-
-        const matchPairAddrs: Array<Address> = matchPairElements.map(
-          (item: PairElement) => item.pairAddress
-        );
-
-        // Finally get trades that has a matching pair address of available oracles.
-        const blocksTradesFiltered: Array<RawTrade> = blocksTrades.filter(
-          (trade: RawTrade) => matchPairAddrs.includes(trade.pairAddress)
-        );
-
-        // Object with key pairAddress and value pairElement to speed up selection.
-        type MappedPairs = { [key: Address]: PairElement };
-        const pairElementsObj: MappedPairs = matchPairElements.reduce(
-          (acc: MappedPairs, pairElement: PairElement) => {
-            acc[pairElement.pairAddress] = pairElement;
-            return acc;
-          },
-          {} as MappedPairs
-        );
-
-        const backendSelector: Generator<number> = BackendSelector(
-          'regularNode',
-          blockchain.name
-        );
-
-        for (const trade of blocksTradesFiltered) {
+      for (const trade of blockTrades) {
+	  // Getting the protocol and pool of the current trade and its data.
           const protocolCode: ProtocolCode = trade.protocolCode;
-          const pairElement: PairElement = pairElementsObj[trade.pairAddress];
-          const token0Address: Address = pairElement.token0Address as Address;
-          const token1Address: Address = pairElement.token1Address as Address;
-          const token0Symbol: string = pairElement.token0Symbol as string;
-          const token1Symbol: string = pairElement.token1Symbol as string;
+          const pool: Pool = mappedPools[trade.pairAddress];
 
-          // Selecting respective amounts for v3 protocol or v2.
+        /**
+	 * A related pool is the pool that matches any token of a non normal pool, a non
+	 * normal pool is one composed of ABC/XYZ tokens, i.e without a chaincoin or a stable.
+	 * This call is done if the current pool is not normal.
+	 */
+          const relatedPool: Pool | undefined = !pool.status.normal
+            ? await callRelatedPool(pool.token0Address, pool.token1Address)
+            : undefined;
+
+	try {
+          /**
+	   * Variables amount0 and amount1 are defined signed bigints for protocols V3,
+	   * but for protocols V2 variables amount0In, amount0Out, amount1In and amount1Out
+	   * could be undefined or be positive bigints depending on the trade method used.
+	   *
+	   * Equations for V2 describes the behavior of a trade in that protocol,
+	   * while for trades in protocols V3 a simple assignment is used.
+	   */
           const amount0: bigint = trade.amount0
-            ? trade.amount0
-            : absBigInt((trade.amount0Out ?? 0n) - (trade.amount0In ?? 0n));
+            ? trade.amount0 // V3
+            : absBigInt((trade.amount0Out ?? 0n) - (trade.amount0In ?? 0n)); // V2.
 
           const amount1: bigint = trade.amount1
-            ? trade.amount1
-            : absBigInt((trade.amount1Out ?? 0n) - (trade.amount1In ?? 0n));
-
-          // Convering amounts from bigint|decimals to float (loosing precition).
-          const amount0Float: number = toUnsafeFloat(
-            amount0,
-            Number(pairElement.token0Decimals)
-          );
-          const amount1Float: number = toUnsafeFloat(
-            amount1,
-            Number(pairElement.token1Decimals)
-          );
-
-          // Get the related pair for any of both tokens in case of abc|xyz pairs.
-          const relPairElement: PairElement | undefined = !pairElement.meta.normal
-            ? await oraclesObj[protocolCode].getRelPairElement(
-                token0Address,
-                token1Address
-              )
-            : undefined;
+            ? trade.amount1 // V3
+            : absBigInt((trade.amount1Out ?? 0n) - (trade.amount1In ?? 0n)); // V2.
 
           // Calc price taking into account related pair element.
           const price: Price = await toPrice(
             blockchain,
             protocolCode,
-            pairElement,
+            mappedPools[trade.pairAddress],
             amount0,
             amount1,
             chainCoinPrice,
-            { relPairElement: relPairElement, backendSelector: backendSelector }
+            { relatedPool: relatedPool, backendSelector: backendSelector }
           );
 
-          // Selecting correct price and token by side.
+          // from bigint with decimals to float (loosing precision).
+          const amount0Float: number = toUnsafeFloat(
+            amount0,
+            Number(pool.token0Decimals)
+          );
+          const amount1Float: number = toUnsafeFloat(
+            amount1,
+            Number(pool.token1Decimals)
+          );
+
+          // If price side was price0 take amount0Float.
           const tradedAmountFloat: number =
             price.side === 'price0' ? amount0Float : amount1Float;
 
-          const tokenA: Address = price.side === 'price0' ? token0Address : token1Address;
-
-          /*
-	    Determines where the amount come from, from token0 or from token1.
-	    trade.amount0 could be negative for v3 protocol. 
-	  */
-          const amountIn0: boolean =
-            trade.amount0 !== undefined
-              ? trade.amount0 > 0
-                ? true
-                : false
-              : (trade.amount0In ?? 0n) > 0
-                ? true
-                : false;
-
-          const amountIn1: boolean =
-            trade.amount1 !== undefined
-              ? trade.amount1 > 0
-                ? true
-                : false
-              : (trade.amount1In ?? 0n) > 0
-                ? true
-                : false;
-
-          let isBuy: boolean = false;
-
-          /*
-	    If tokenA is token0 and amountIn was also with token0 it means a sell,
-	    on the contrary if the amountIn was with token1 it means a buy.
-	  */
-          if (tokenA === token0Address && amountIn0) {
-            isBuy = false;
-          }
-
-          if (tokenA === token0Address && amountIn1) {
-            isBuy = true;
-          }
-          /*
-	    If tokenA is token1 and amountIn was also with token1 it means a sell,
-	    on the contrary if the amountIn was with token0 it means a buy.
-	  */
-          if (tokenA === token1Address && amountIn1) {
-            isBuy = false;
-          }
-
-          if (tokenA === token1Address && amountIn0) {
-            isBuy = true;
-          }
-
+	  // If price side was price0, tokenIn is token0 and tokenOut is token1.
+          const tokenIn: Address = price.side === 'price0' ? pool.token0 : pool.token1;
+	  const tokenOut: Address = price.side === 'price0' ? pool.token1 : pool.token0;
+	  
+	  // Determine if the trade was a buy or a sell. 
+	  const tradeIsBuy: boolean = isTradeBuy(trade, pool, tokenIn);
+	  
           const tradeUsd: Trade = {
             protocolCode: trade.protocolCode,
             pairAddress: trade.pairAddress,
@@ -251,16 +206,16 @@ export function trackTrades(): void {
             router: trade.router,
             trader: trade.trader,
             recipient: trade.recipient,
-            tokenA: tokenA,
-            tokenB: price.side === 'price0' ? token1Address : token0Address,
-            symbolA: price.side === 'price0' ? token0Symbol : token1Symbol,
-            symbolB: price.side === 'price0' ? token1Symbol : token0Symbol,
+            tokenIn: tokenIn,
+            tokenOut: tokenOut,
+            symbolIn: price.side === 'price0' ? pool.token0Symbol : pool.token1Symbol,
+            symbolOut: price.side === 'price0' ? pool.token1Symbol : pool.token0Symbol,
             timestamp: trade.timestamp,
-            amountA: price.side === 'price0' ? amount0Float : amount1Float,
-            amountB: price.side === 'price0' ? amount1Float : amount0Float,
+            amountIn: price.side === 'price0' ? amount0Float : amount1Float,
+            amountOut: price.side === 'price0' ? amount1Float : amount0Float,
             priceUsd: price.value,
             tradedAmountUsd: tradedAmountFloat * price.value,
-            isBuy: isBuy
+            tradeIsBuy: tradeIsBuy
           };
 
           tradesByInterval.push(tradeUsd);
@@ -276,6 +231,9 @@ export function trackTrades(): void {
 
       // Storing trades to DB.
       try {
+	const currentDate: Date = new Date();
+	const tradesCollectionName: string = 'trades' + format(currentDate, 'yyyyMMdd');
+
         const result: Trade | null = await DbHandler.addTrades(
           blockchain.name,
           tradesCollectionName,

@@ -1,2 +1,2 @@
-# First attempt to build an OHCLV dApp
-This app is a first attempt to build an OHCLV oracle with history data direct from the blockchain.
+# Tracks block's transactions
+This is the tracker module to extract transactions of DeFi protocols in EVM blockchains, turning them into OHCLV data.

@@ -46,7 +46,7 @@
     "cross-env": "^7.0.3",
     "date-fns": "^3.6.0",
     "ethers": "^6.13.2",
-    "lib": "file:../lib",
+    "core": "file:../core",
     "mongodb": "^6.6.2",
     "oracle": "file:../oracle"
   }
